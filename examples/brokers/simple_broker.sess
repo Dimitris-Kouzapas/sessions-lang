@@ -1,0 +1,64 @@
+type abc context {
+    alice: bob!int. carol!bool
+    bob: alice?int
+    carol: alice?bool
+}
+
+type cType shared { 
+    abc     chan
+    alice   requester
+}
+
+aliceStarter: local u. u?cType
+proc aliceStarter u.
+    channel cType <- u
+    req(channel) with
+        role alice as aliceProc bob carol
+
+bobStarter: local u. u?cType
+proc bobStarter u.
+    channel cType <- u
+    acc(channel) with
+        role bob as bobProc alice
+
+carolStarter: local u. u?cType
+proc carolStarter u.
+    channel cType <- u
+    acc(channel) with
+        role carol as carolProc alice
+
+aliceProc: abc(alice)
+proc aliceProc b c.
+    let x int as 5
+    let y bool as false
+    out <- "alice sending " <- x <- " to bob\n"
+    b <- x
+    out <- "alice sending " <- y <- " to carol\n"
+    c <- y
+
+bobProc: abc(bob)
+proc bobProc a.
+    x int <- a
+    out <- "bob received " <- x <- " from alice\n"
+
+carolProc: abc(carol)
+proc carolProc a.
+    x bool <- a
+    out <- "carol received " <- x <- " from alice\n"
+
+main: local. end
+proc main.
+    conc with
+        role self as current
+        role a as aliceStarter self
+        role b as bobStarter self
+        role c as carolStarter self
+
+    let myChan cType as sync {
+        chan: abc
+        requester: alice
+    }
+
+    a <- myChan
+    b <- myChan
+    c <- myChan

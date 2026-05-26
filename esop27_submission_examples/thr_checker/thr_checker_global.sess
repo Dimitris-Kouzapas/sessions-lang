@@ -1,0 +1,25 @@
+type checker context {
+    initialiser: worker!int
+    client: worker!int. worker?bool
+    worker: initialiser?int. client?int. client!bool
+}
+
+clientProc: checker(client)
+proc clientProc w.
+    w <- 15
+    ok bool <- w
+    let msg string as if ok then "passes" else "does not pass"
+    out <- "Value 15 " <- msg <- " the threshold\n"
+
+workerProc: checker(worker)
+proc workerProc i c.
+    threshold int <- i
+    value int <- c
+    c <- value > threshold
+
+main: local. end
+proc main.
+    conc with
+        role i as (proc u. u <- 10) w
+        role c as clientProc w
+        role w as workerProc i c

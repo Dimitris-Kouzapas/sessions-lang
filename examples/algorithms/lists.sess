@@ -1,0 +1,74 @@
+length: local user. user?[int]. user!int
+proc length user.
+    list [int] <- user
+    if    list == []
+    then  user <- 0
+    else  len int = length(list[1:])
+          user <- len + 1
+
+map: local user. user?[int]. user?(local user. user?int. user!int). user![int]
+proc map user.
+  list [int] <- user
+  f (local user. user?int. user!int) <- user
+  if    list == []
+  then  user <- []
+  else  conc with
+            role p as current
+            role u as f p
+        u <- list[0]
+        conc with
+            role p as current
+            role m as map p
+
+      m <- list[1:] <- f
+      mapped int <- u
+      tail [int] <- m
+      user <- [mapped] + tail
+
+filter: local user.
+    user?(local user. user?int. user!bool).
+    user?[int].
+    user![int]
+
+proc filter user.
+    f (local user. user?int. user!bool) <- user
+    list [int] <- user
+    if    list == []
+    then  user <- []
+    else  nlist [int] = filter(f, list[1:])
+          result bool = f(list[0])
+          if    result == true
+          then  user <- [list[0]] + nlist
+          else  user <- nlist
+
+foldl: local user.
+          user?(local user. user?float. user?float. user!float).
+          user?float.
+          user?[float].
+          user!float
+
+proc foldl user.
+    func (local user. user?float. user?float. user!float) <- user
+    accumulator float <- user
+    list [float] <- user
+    if    list == []
+    then  user <- accumulator
+    else  newAcc float = func(list[0], accumulator)
+          result float = foldl(func, newAcc, list[1:])
+          user <- result
+
+foldr: local user.
+          user?(local user. user?float. user?float. user!float).
+          user?float.
+          user?[float].
+          user!float
+
+proc foldr user.
+    func (local user. user?float. user?float. user!float) <- user
+    accumulator float <- user
+    list [float] <- user
+    if    list == []
+    then  user <- accumulator
+    else  newAcc float = foldr(func, accumulator, list[1:])
+          result float = func(list[0], newAcc)
+          user <- result

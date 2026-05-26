@@ -1,0 +1,46 @@
+type abcd global alice bob carol damien.
+    carol -> alice: int.
+    damien -> bob: int.
+    alice -> bob {
+        OK: bob -> alice: int. end
+    } or {
+        KO: end
+    }
+
+shared mySharedChannel sync {
+    chan:       abcd
+    requester:  alice
+}
+
+aliceProc: abcd(alice)
+proc aliceProc b c.
+    i int <- c
+    select b of
+        i < 10 <- OK:
+            x int <- b
+            out <- "received: " <- x <- "\n"
+            acc(mySharedChannel) with
+                role carol as (proc ch. ch <- i + 1) alice
+            req(mySharedChannel) with
+                role alice as aliceProc bob carol
+        KO: term
+
+bobProc: abcd(bob)
+proc bobProc a d.
+    x int <- d
+    branch a of
+        OK: a <- x
+            acc(mySharedChannel) with
+                role bob as bobProc alice damien;
+            acc(mySharedChannel) with
+                role damien as (proc ch. ch <- x + 2) bob
+        KO: out <- "bob terminates\n"
+
+main: local. end
+proc main.
+    conc with
+        role this as current
+        role f as aliceProc b this
+        role b as bobProc f d
+        role d as (proc ch. ch <- 0) b
+    f <- 0

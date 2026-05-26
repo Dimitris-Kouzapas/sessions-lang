@@ -1,0 +1,9 @@
+main: local. end
+proc main.
+	let x int as 10
+	let y bool as true
+	let z float as x + 0.2
+
+	out <- "x = " <- x <- "\n"
+	out <- "y = " <- y <- "\n"
+	out <- "z = " <- z <- "\n"

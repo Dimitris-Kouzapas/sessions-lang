@@ -1,0 +1,28 @@
+type glob global a b.
+    a -> b {
+        OK: b -> a: int. 
+            end
+    } or {
+        KO: end
+    }
+
+alice: glob(a)
+proc alice b.
+    select b of
+        true <- OK:
+            x int <- b
+            out <- "alice receives " <- x <- " from Bob\n"
+        KO: term
+
+bob: glob(b)
+proc bob a.
+    branch a of {
+        OK: a <- 10
+        KO: term
+    }
+
+main: local. end
+proc main.
+    conc with
+        role a as alice b
+        role b as bob a

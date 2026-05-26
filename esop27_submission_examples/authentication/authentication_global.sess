@@ -1,0 +1,59 @@
+type login global client server.
+        client -> server: string.
+        server -> client {
+            Success: end
+        } or {
+            Fail:   client -> server {
+                            Retry: rec
+                    } or {
+                            End: end
+                    }
+        }
+    
+clientProc: init i. i?int | login(client)
+proc clientProc {i} s.
+    retries int <- i
+    s <- "credentials@user1234"
+    out <- "login attempt: " <- retries <- " -> "
+    branch s of
+        Success:    out <- "Successful!\n" 
+        Fail:       out <- "Cannot establish login. "
+                    if   retries < 10
+                    then s <- Retry
+                         out <- "Retry\n"
+                         rec clientProc { proc {i}. i <- retries + 1 } s
+                    else s <- End
+                         out <- "Terminate\n"
+
+serverProc: login(server)
+proc serverProc c.
+    request string <- c
+    c <- Fail
+    branch c of
+        Retry: rec serverProc c
+        End: term
+
+authenticate: local u. u?string. u!bool
+proc authenticate u.
+  credentials string <- u
+  u <- credentials == "credentials@user1234"
+    
+serverProc2: login(server)
+proc serverProc2 c.
+  credentials string <- c
+  conc with
+    role s as current
+    role auth as authenticate s
+  response bool <- (auth <- credentials)
+  if   response
+  then c <- Success
+  else c <- Fail
+       branch c of
+         Retry: rec serverProc2 c
+         End: term
+
+main: local. end
+proc main.
+    conc with
+        role c as clientProc { proc {i}. i <- 0 } s
+        role s as serverProc c

@@ -1,0 +1,31 @@
+type abc context {
+    alice: bob!string. bob?int. carol! float
+    bob: alice?string. alice!int
+    carol: alice?float
+}
+
+alice: abc(alice)
+bob: abc(bob)
+carol: abc(carol)
+
+proc alice c e.
+    c <- "hello bob"
+    time int <- c
+    out <- "alice receives from bob: " <- time <- "\n"
+    e <- 4.2
+
+proc bob d.
+    x string <- d
+    d <- 12344
+    out <- "bob receives from alice: " <- x <- "\n"
+
+proc carol f.
+    y float <- f
+    out <- "carol receives from alice: " <- y <- "\n"
+
+main : local. end
+proc main.
+    conc with
+        role a as alice b c
+        role b as bob a
+        role c as carol a

@@ -1,0 +1,38 @@
+type ab global alice bob.
+    alice -> bob {
+        OK: bob -> alice: int. end
+    } or {
+        KO: end
+    }
+
+shared mySharedChannel sync {
+    chan:       ab
+    requester:  alice
+}
+
+aliceProc: init u. u?int | ab(alice)
+proc aliceProc {u} b.
+    i int <- u
+    select b of
+        i < 10 <- OK:
+            x int <- b
+            out <- "received: " <- x <- "\n"
+            req(mySharedChannel) with
+                role alice as aliceProc{proc {u}. u  <- i + 1} bob
+        KO: term
+
+bobProc: init c. c?int | ab(bob)
+proc bobProc {d} a.
+    x int <- d
+    branch a of
+        OK: a <- x
+            acc(mySharedChannel) with
+                role bob as bobProc{proc {u}. u  <- x + 2} alice
+        KO: out <- "bar terminates\n"
+
+
+main: local. end
+proc main.
+    conc with
+        role a as aliceProc{proc {u}. u  <- 0} b
+        role b as bobProc {proc {u}. u  <- 0} a    

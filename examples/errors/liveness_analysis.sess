@@ -1,0 +1,5 @@
+main: local. end
+proc main.
+	conc with
+		role a as proc r. r <- 1 b
+		role b as proc r. r <- 1 a

@@ -1,0 +1,10 @@
+main: local. end
+proc main.
+	time1 string <- inp[{service: "time", action: "current"}]
+	out <- "current time => "<- time1 <- "\n"
+
+	out <- "wait 2 seconds\n"
+	out[{service: "time", action: "sleep", unit: "s"}] <- 2
+
+	time2 string <- inp[{service: "time", action: "current"}]
+	out <- "current time => "<- time2 <- "\n"

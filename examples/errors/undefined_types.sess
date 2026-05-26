@@ -1,0 +1,6 @@
+main: local. end
+proc main.
+	let b1 shared { globabc chan; joe requester } as sync { chan: contextabc; requester: joe}
+	let b2 abcSharedType as channel3
+	let f undefinedTyped as 42
+

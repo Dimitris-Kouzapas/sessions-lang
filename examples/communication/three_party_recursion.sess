@@ -1,0 +1,44 @@
+alice:	init u. u?int. end
+	 |	local bob carol.
+			select carol {
+				OK: bob!int. rec
+			} or {
+				KO: bob!int. rec
+			}
+	
+proc alice {u} bob carol.
+	y int <- u
+	if 		y < 10
+	then	carol <- OK
+			bob <- y
+			rec alice{proc {u}. u <- y + 1} bob carol
+	else	carol <- KO
+			bob <- y
+			rec alice{proc {u}. u <- y - 5} bob carol
+
+bob: local alice. alice?int. rec
+proc bob alice.
+	x int <- alice
+	out <- "bob received " <- x <- "\n"
+	rec bob alice
+
+carol: local alice.
+	branch alice {
+		OK: rec
+	} or {
+		KO: rec
+	}
+
+proc carol alice.
+	branch alice of
+		OK: out <- "carol takes OK branch\n"
+			rec carol alice
+		KO: out <- "carol takes KO branch\n"
+			rec carol alice
+	
+main: local. end
+proc main.
+	conc with
+		role a as alice{proc {u}. u <- 1} b c
+		role b as bob a
+		role c as carol a

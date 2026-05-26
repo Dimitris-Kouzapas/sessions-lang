@@ -1,0 +1,115 @@
+import examples.algorithms.map
+
+type bookstore global a s b.
+                a -> s {
+                        OK: a -> s: (string).
+                            s -> a: (float).
+                            a -> s {
+                                OK: a -> b {
+                                        OK: a -> b: (float).
+                                        b -> a {
+                                                OK: b -> s {
+                                                        OK: a -> s: (float).
+                                                            b -> s: (float).
+                                                            s -> a: (string).
+                                                            end
+                                                }
+                                        } or {
+                                                REC: b -> s {
+                                                        REC: rec
+                                                }
+                                        }
+                                }
+                        } or {
+                                REC: a -> b {
+                                        REC: rec
+                                }
+                        }
+                } or {
+                        TERM: a -> b {
+                                TERM: end
+                        }
+                }
+
+alice: init u. u?[string] | bookstore(a)
+proc alice {u} s b.
+    titles [string] <- u
+    if      titles == []
+    then    s <- TERM
+            b <- TERM
+    else    s <- OK
+            s <- titles[0]
+            quote float <- s
+            select s of
+                quote <= 10 <- OK: 
+                    b <- OK
+                    b <- quote/2
+                    branch b of {
+                        OK: s <- quote / 2
+                            book string <- s
+                            out <- book <- "\n"
+                        REC: rec alice<titles[1:]> s b
+                    }
+                REC: b <- REC
+                     rec alice<titles[1:]> s b
+
+
+seller: bookstore(s)
+proc seller a b.
+      branch a of {
+          OK:   title string <- a
+                let prices as [
+                    {key: "alice in wonderland", value: 0},
+                    {key: "pinoccio", value: 1},
+                    {key: "the sleeping beauty", value: 2},
+                    {key: "snowhite and the seven dwarfs", value: 3},
+                    {key: "they beauty and the beast", value: 4},
+                ]
+                let books [record {book string, price int}] as [
+                    {book: "alice was in wonderland", price: 14},
+                    {book: "pinoccio had a wooden nose", price: 12},
+                    {book: "the beauty was sleeping and the prince came", price: 10},
+                    {book: "mirror mirror on the wall", price: 9},
+                    {book: "the beauty kissed the beast", price: 14},
+                ]
+                index int = map.get(prices, title)
+                a <- books[index].price
+                branch a of {
+                    OK: branch b of {
+                            OK: m1 float <- a
+                                m2 float <- b
+                                a <- books[index].book
+                            REC: rec seller a b
+                        }
+                    REC: rec seller a b
+                }
+          TERM: term
+      }
+
+bob: bookstore(b)
+proc bob a s.
+    branch a of
+        OK: contr float <- a
+            if      contr <= 5
+            then    a <- OK
+                    s <- OK
+                    s <- contr
+            else    a <- REC
+                    s <- REC
+                    rec bob a s
+        REC: rec bob a s
+        TERM: term
+
+main: local. end
+proc main.
+    let titles [string] as [
+        "alice in wonderland",
+        "pinoccio",
+        "the sleeping beauty",
+        "snowhite and the seven dwarfs",
+        "the beauty and the beast",
+    ]
+    conc with
+        role a as alice<titles> s b
+        role b as bob a s
+        role s as seller a b

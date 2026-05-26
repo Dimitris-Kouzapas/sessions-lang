@@ -1,0 +1,6 @@
+main: local. end
+proc main.
+	out <- "give an integer number: "
+	x int <- inp
+	out <- "you gave number: " <- x <- "\n"
+ 

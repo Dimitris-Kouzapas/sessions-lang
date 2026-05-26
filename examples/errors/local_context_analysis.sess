@@ -1,0 +1,14 @@
+type contextabc context {
+	alice:	bob!string. carol?int
+	carol:	alice!int. bob?bool
+	bob:	alice?string. carol!bool
+	elon: 	damien?int. end
+}
+
+type abcSharedType shared {
+	context {
+		alice:	bob!string.carol?int
+	} chan
+	alice requester
+}
+

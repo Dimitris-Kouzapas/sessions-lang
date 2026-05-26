@@ -1,0 +1,28 @@
+type passInt global a b. a->b: int
+
+type sendPassInt passInt(a)
+
+orchestrator: local a. a?passInt(a)
+proc orchestrator a.
+    x sendPassInt <- a
+    let y as receiver
+    conc with
+      role p as x q
+      role q as y p
+
+receiver: passInt(b)
+proc receiver f.
+    x float <- f
+    out <- "receive " <- x <- "\n"
+
+sender: local user. user!int
+proc sender user. 
+    let x as 42
+    user <- x
+
+main: local. end
+proc main.
+    conc with
+        role p as current 
+        role o as orchestrator p
+    o <- sender

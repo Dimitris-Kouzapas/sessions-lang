@@ -1,0 +1,17 @@
+doubleNot: local user.
+                user?int.
+                user?bool.
+                user!int.
+                user!bool
+
+proc doubleNot user.
+    x int <- user
+    y bool <- user
+    user <-  x * 2 <- not y
+
+main: local. end
+proc main.
+    x int, y bool = doubleNot(1 + 2, true)
+    w int, z bool = doubleNot(2 + 3, false)
+    out <- x <- " " <- y <- "\n"
+    out <- w <- " " <- z <- "\n"

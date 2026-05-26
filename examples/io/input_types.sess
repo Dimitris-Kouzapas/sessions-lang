@@ -1,0 +1,18 @@
+main: local. end
+proc main.
+	out <- "give integer: "
+	x int <- inp
+
+	out <- "give float: "
+	y float <- inp
+
+	out <- "give bool: "
+	z bool <- inp
+
+	out <- "give string: "
+	s string <- inp
+
+	out <- "read integer: " <- x <- "\n"
+	out <- "read float: "   <- y <- "\n"
+	out <- "read bool: "    <- z <- "\n"
+	out <- "read string: "  <- s <- "\n" 

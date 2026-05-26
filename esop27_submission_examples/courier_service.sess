@@ -1,0 +1,40 @@
+shared courierService sync {
+  	chan: global shop courier.
+  				 shop -> courier: string
+ 	requester: shop
+}
+
+courierProc: init u. u?int | local. end
+proc courierProc {u}.
+	courierId int <- u
+	acc(courierService) with
+		role courier as (
+			proc delivery.
+				packet string <- delivery
+				out <- "Courier " <- courierId <- " delivers packet: " <- packet <- "\n"
+		) shop
+
+customer: init u. u?string | local s. s!string
+proc customer {u} s.
+	equipment string <- u
+	s <- equipment
+
+deliveryShop: local c. c?string
+proc deliveryShop c. 
+	order string <- c
+	req(courierService) with
+		role shop as current
+	courier <- order
+
+main: local. end
+proc main.
+	conc with role c1 as courierProc<1>
+	conc with role c2 as courierProc<2>
+	conc with
+		role cust as customer<"tools&diy"> sh
+		role sh as deliveryShop cust
+	conc with
+		role cust2 as customer<"food"> sh2
+		role sh2 as deliveryShop cust2
+
+

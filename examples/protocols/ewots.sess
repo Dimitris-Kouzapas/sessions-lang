@@ -1,0 +1,96 @@
+import examples.algorithms.lists
+/********************************************************************************
+ * packet type
+ ********************************************************************************/
+
+type packet record {
+		list [int]
+		f (local user. user?int. user!int)
+		g (local user. user?float. user?float. user!float)
+		load int
+		index int
+}
+
+/********************************************************************************/
+
+node: local prev next.
+		prev?packet.
+		next!packet.
+		prev?float.
+		next!float
+
+proc node prev next.
+	input packet <- prev
+    len int = lists.length(input.list)
+    if 		len <= input.load
+    then	next              <- { list: []; f: input.f; g: input.g; load: input.load; index: input.index - 1; }
+    		mapped [int]       = lists.map(input.list, input.f)
+    		accumulator float <- prev
+    		result float       = lists.foldl(input.g, accumulator, mapped)
+    		next              <- result
+    else	conc with
+    			role p as current
+             	role n1 as node p n2
+            	role n2 as node n1 n3
+            	role n3 as lastNode n2 p
+
+			let limit int as 	 (len * (input.index - 1)) / input.index 
+			let sub1 [int] as    input.list[0: limit]
+			let sub2 [int] as    input.list[limit: len]
+			n1				  <- { list: sub1; f: input.f; g: input.g; load: input.load; index: 3; }
+			next              <- { list: sub2; f: input.f; g: input.g; load: input.load; index: input.index - 1; }
+    		accumulator float <- prev
+    		n1                <- accumulator 
+    		result float      <- n3
+			next              <- result
+
+lastNode: local prev parent.
+		prev?packet.
+		prev?float.
+		parent!float
+
+proc lastNode prev parent.
+	input packet <- prev
+    len int = lists.length(input.list)
+    if		len <= input.load
+    then	mapped      [int]  = lists.map(input.list, input.f)
+    		accumulator float <- prev
+    		result      float  = lists.foldl(input.g, accumulator, mapped)
+    		parent            <- result
+    else	conc with
+    			role p as current
+            	role n1 as node p n2
+            	role n2 as node n1 n3
+            	role n3 as lastNode n2 p
+      		n1                <- { list: input.list; f: input.f; g: input.g; load: input.load; index: 3; }
+      		accumulator float <- prev
+      		n1                <- accumulator
+			result      float <- n3
+			parent            <- result
+
+main: local. end
+proc main.
+    conc with
+    	role p as current
+        role n1 as node p n2
+        role n2 as node n1 n3
+        role n3 as lastNode n2 p
+    n1 <- {
+				list: [	143, 87, 291, 402, 15, 76, 329, 118, 254, 493,
+						367, 221, 59, 308, 412, 7, 188, 90, 276, 335,
+						144, 423, 68, 195, 311, 370, 129, 81, 457, 233,
+						5, 299, 362, 153, 49, 275, 426, 95, 341, 202,
+						10, 186, 317, 54, 390, 266, 471, 142, 27, 384,
+						177, 248, 437, 66, 301, 128, 355, 78, 203, 414,
+						34, 228, 321, 160, 96, 444, 71, 179, 210, 365,
+						63, 287, 109, 376, 14, 240, 480, 102, 269, 392,
+						37, 164, 219, 81, 350, 127, 469, 182, 55, 305,
+						12, 296, 407, 88, 260, 358, 119, 433, 200, 99 ]
+				f: (proc user. x int <- user; if x - 100 < 0 then user <- 0 else user <- x - 100)
+				g: (proc user. accumulator float <- user; x float <- user; user <- accumulator*0.3 + x)
+				load: 3
+				index: 3
+    	  }
+    	 <- 0
+    result float <- n3
+    out <- result <- "\n"

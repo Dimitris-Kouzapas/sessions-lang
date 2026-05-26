@@ -1,0 +1,53 @@
+import examples.algorithms.lists
+
+qsort: local user.  user?(local u. u?int. u?int. u!bool).
+                    user?[int].
+                    user![int]
+
+proc qsort user.
+    f (local u. u?int. u?int. u!bool) <- user
+    list [int] <- user
+    if    list == []
+    then  user <- []
+    else {
+        let lt as (
+          proc u.
+            x int <- u
+            r bool = f(x,list[0])
+            u <- r
+        )
+
+        let gte as (
+          proc u.
+            x int <- u
+            r bool = f(x,list[0])
+            u <- not r
+        )
+
+        lesser [int] = lists.filter(lt, list[1:])
+        greater [int] = lists.filter(gte, list[1:])
+        sorted1 [int] = qsort(f, lesser)
+        sorted2 [int] = qsort(f, greater)
+        user <- sorted1 + [list[0]] + sorted2
+    }
+
+getList: local user. user![int]
+proc getList user.
+    user <- [   143, 87, 291, 402, 15, 76, 329, 118, 254, 493,
+                367, 221, 59, 308, 412, 7, 188, 90, 276, 335,
+                144, 423, 68, 195, 311, 370, 129, 81, 457, 233,
+                5, 299, 362, 153, 49, 275, 426, 95, 341, 202,
+                10, 186, 317, 54, 390, 266, 471, 142, 27, 384,
+                177, 248, 437, 66, 301, 128, 355, 78, 203, 414,
+                34, 228, 321, 160, 96, 444, 71, 179, 210, 365,
+                63, 287, 109, 376, 14, 240, 480, 102, 269, 392,
+                37, 164, 219, 81, 350, 127, 469, 182, 55, 305,
+                12, 296, 407, 88, 260, 358, 119, 433, 200, 99
+            ]
+main: local. end
+proc main.
+    list [int] = getList()
+    let f as (proc u. x int <- u; y int <- u; u <- x < y)
+
+    result [int] = qsort(f, list)
+    out <- result <- "\n"

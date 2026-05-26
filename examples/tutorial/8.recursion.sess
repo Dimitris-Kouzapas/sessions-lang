@@ -1,0 +1,23 @@
+factorial: local caller.
+					caller?int.
+					caller!int
+proc factorial caller.
+	x int <- caller
+	if 		x == 1
+	then	caller <- 1
+	else 	conc with
+				role caller as current
+				role f as factorial caller
+			result int <- (f <- x - 1)
+			caller <- result * x
+
+main: local. end
+proc main.
+	conc with
+		role caller as current
+		role f as factorial caller
+
+	out <- "give an integer: "
+	x int <- inp
+	result int <- (f <- x)
+	out <- result <- "\n" 

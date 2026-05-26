@@ -1,0 +1,27 @@
+alice: local bob.
+				bob!string.
+				bob?string.
+				bob!int
+
+proc alice bob.
+	bob <- "hello bob!"
+	greet string <- bob
+	out <- "alice received \"" <- greet <- "\" from bob\n"
+	bob <- 1029
+
+bob: local alice.
+				alice?string.
+				alice!string.
+				alice?int
+proc bob alice.
+	greet string <- alice
+	out <- "bob received \"" <- greet <- "\" from alice\n"
+	alice <- "hi alice! What time is it?"
+	time int <- alice
+	out <- "bob received time: " <- time <- "\n"
+
+main: local. end
+proc main.
+	conc with
+		role a as alice b
+		role b as bob a

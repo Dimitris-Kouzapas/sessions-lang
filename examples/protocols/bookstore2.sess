@@ -1,0 +1,109 @@
+import examples.algorithms.map
+
+type bookstore global alice seller bob.
+	alice -> seller: string.
+	seller -> alice: float.
+	alice -> seller {
+		OK:	
+			alice -> bob {
+				OK: rec
+			}
+			
+	} or {
+		KO: alice -> bob {
+				KO: alice -> bob: float.
+					bob -> seller {
+						Buy:
+							bob -> alice {
+								Buy: 
+									bob -> seller: float.
+									alice -> seller: float.
+									seller -> alice: string
+							}	
+					} or {
+						NoBuy:
+							bob -> alice { NoBuy: end }
+					}
+					
+			}
+	}
+
+aliceProc: init u. u?int | bookstore(alice)
+proc aliceProc {u} seller bob.
+	let titles [string] as [
+		"alice in wonderland",
+		"pinoccio",
+		"the sleeping beauty",
+		"snowhite and the seven dwarfs",
+		"the beauty and the beast",
+	]
+	index int <- u
+	seller <- titles[index]
+	price float <- seller
+	if 		price >= 10
+	then 	seller <- OK
+			bob <- OK
+			rec aliceProc<index + 1> seller bob
+	else	seller <- KO
+			bob <- KO
+			bob <- price / 2
+			branch bob of
+				Buy:
+					seller <-  price / 2
+					book string <- seller
+					out <- book <- "\n"
+				NoBuy:
+					term
+
+sellerProc: bookstore(seller)
+proc sellerProc alice bob.
+	let prices as [
+		{key: "alice in wonderland", value: 0},
+		{key: "pinoccio", value: 1},
+		{key: "the sleeping beauty", value: 2},
+		{key: "snowhite and the seven dwarfs", value: 3},
+		{key: "they beauty and the beast", value: 4},
+	]
+	let books [record {book string, price int}] as [
+		{book: "alice was in wonderland", price: 14},
+		{book: "pinoccio had a wooden nose", price: 12},
+		{book: "the beauty was sleeping and the prince came", price: 10},
+		{book: "mirror mirror on the wall", price: 9},
+		{book: "the beauty kissed the beast", price: 14},
+	]
+	title string <- alice
+	index int = map.get(prices, title)
+	alice <- books[index].price
+	branch alice of
+		OK:
+			rec sellerProc alice bob
+		KO:
+			branch bob of {
+				Buy:
+					money1 float <- bob
+					money2 float <- alice
+					alice <- books[index].book
+				NoBuy:
+					out <- "seller: no purchase\n"
+			}
+
+bobProc: bookstore(bob)
+proc bobProc alice seller.
+	branch alice of
+		OK:
+			rec bobProc alice seller
+		KO:
+			contr float <- alice
+			if 		contr < 3
+			then 	seller <- Buy
+					alice <- Buy
+					seller <- contr
+			else	seller <- NoBuy
+					alice <- NoBuy
+
+main: local. end
+proc main.
+	conc with
+		role a as aliceProc<0> s b
+		role b as bobProc a s
+		role s as sellerProc a b

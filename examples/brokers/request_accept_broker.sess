@@ -1,0 +1,57 @@
+type abc context {
+    alice: carol?ctype. carol?int. select bob { OK: bob!int } or { KO: end }
+    bob: branch alice { OK: alice?int } or { KO: end }
+    carol: alice!ctype. alice!int
+}
+
+type globabc global alice bob carol.
+    carol -> alice: (shared { globabc chan; carol requester }).
+    carol -> alice: int. 
+    alice -> bob { OK: alice -> bob: int } or { KO: end }
+
+type globabc2 global a b c.
+    c -> a: (shared {globabc2 chan, c requester}).
+    c -> a: int.
+    a -> b { OK: a -> b: int } or { KO: end }
+
+type ctype shared { abc chan; carol requester }
+
+shared globalChannel1 sync { chan: abc; requester: carol }
+shared globalChannel2 sync { chan: globabc; requester: carol }
+shared globalChannel3 sync { chan: globabc2; requester: c }
+
+alice: abc(alice)
+proc alice b c.
+    channel ctype <- c
+    index int <- c
+    select b of
+        index < 10 <- OK:
+            out <- "alice sends " <- index <- " to bob\n"
+            b <- index
+            acc(channel) with 
+                role alice as alice bob carol
+            req(channel) with
+                role carol as current
+            alice <- channel <- index + 1
+        KO:
+            out <- "alice terminates\n"
+
+bobProc: abc(bob)
+proc bobProc a.
+    branch a of
+        OK:
+            x int <- a
+            out <- "bob received " <- x <- " from alice\n"
+            acc(globalChannel2) with
+                role bob as bobProc alice
+        KO:
+            out <- "bob terminates\n"
+
+main: local. end
+proc main.
+    conc with
+        role c as current
+        role a as alice b c
+        role b as bobProc a
+    let channels as [globalChannel1, globalChannel2]
+    a <- channels[1] <- -1

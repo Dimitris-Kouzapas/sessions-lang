@@ -1,0 +1,81 @@
+type bookstore global alice seller bob.
+	alice -> seller: string.
+	seller -> alice: float.
+	alice -> seller {
+		OK:	alice -> bob { OK: rec }
+	} or {
+		KO: alice -> bob {
+				KO: alice -> bob: float.
+					bob -> seller: float.
+					alice -> seller: float.
+					seller -> alice: string
+		}
+	}
+
+aliceProc: init u. u?int | bookstore(alice)
+proc aliceProc {u} seller bob.
+	let titles [string] as [
+		"alice in wonderland", "the sleeping beauty",
+	]
+	index int <- u
+	seller <- titles[index]
+	price float <- seller
+	if 		price >= 10
+	then 	seller <- OK
+			bob <- OK
+			rec aliceProc<index + 1> seller bob
+	else	seller <- KO
+			bob <- KO
+			bob <- price / 2
+			seller <-  price / 2
+			book string <- seller
+			out <- book <- "\n"
+
+sellerProc: bookstore(seller)
+proc sellerProc alice bob.
+	let books [record {title string, book string, price int}] as [
+		{title: "alice in wonderland", book: "alice story", price: 14},
+		{title: "the sleeping beauty", book: "beauty story", price: 9},
+	]
+	title string <- alice
+	index int = get(books, title)
+	alice <- books[index].price
+	branch alice of
+		OK:
+			rec sellerProc alice bob
+		KO:
+			money1 float <- bob
+			money2 float <- alice
+			alice <- books[index].book
+
+bobProc: bookstore(bob)
+proc bobProc alice seller.
+	branch alice of
+		OK:
+			rec bobProc alice seller
+		KO:
+			contr float <- alice
+			seller <- contr
+
+
+get: local user. user?[record {title string, book string, price int}]. user?string. user!int
+proc get user.
+	list [record {title string, book string, price int}] <- user
+	title string <- user
+	if 		list == []
+	then	user <- -1
+	else	if		list[0].title == title
+			then	user <- 0
+			else	conc with
+						role u as current
+						role g as get u
+					g <- list[1:] <- title
+					index int <- g
+					user <- index + 1
+
+main: local. end
+proc main.
+	conc with
+		role a as aliceProc<0> s b
+		role b as bobProc a s
+		role s as sellerProc a b

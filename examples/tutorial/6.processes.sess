@@ -1,0 +1,8 @@
+function: local. end
+proc function.
+	out <- "Hello from inside function\n"
+
+main: local. end
+proc main.
+	conc with
+		role f as function

@@ -1,0 +1,18 @@
+add: local caller.
+				caller?int.
+				caller?int.
+				caller!int
+proc add caller.
+	x int <- caller
+	y int <- caller
+	caller <- x + y
+
+main: local. end
+proc main.
+	conc with
+		role caller as current
+		role a as add caller
+	a <- 42
+	a <- 24
+	result int <- a
+	out <- "The result is: " <- result <- "\n" 

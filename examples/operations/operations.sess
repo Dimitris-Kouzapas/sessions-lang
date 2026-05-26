@@ -1,0 +1,66 @@
+type senderSession
+	local user.
+		user![float].
+		user!packet.
+		user!int
+
+# type definition
+type packet record { a bool }
+
+# global values
+val myPacket as { a: true; b: 2; c: 2.2; d: "hello"; }
+val myList   as [1, 2, 3, 4, 3, 2, 1]
+val myInt as 3
+
+foo: senderSession
+val foo as proc user.
+	user <- myList
+	user <- myPacket
+	user <- myInt
+
+main: local. end
+proc main.
+	let r record {a int; b int; c bool} as {a: 1; b: 2; c: true}
+	let y [[bool]] as [[true, false], [false]]
+
+	out <- "record: r record {a int; b int; c bool} => " <- r <- "\n"
+	out <- "record access: r.b => " <- r.b  <- "\n"
+	out <- "list of lists: y [[bool]] => " <- y <- "\n"
+	out <- "access list of lists: y[0][1] => " <- y[0][1] <- "\n"
+
+
+	out <- "sum: -3 - - 2. => " <- -3 - - 2. <- "\n"
+	out <- "compare: true != false => " <- true != false <- "\n"
+	out <- "slicing: [1, 2, 3, 4][2:3] => " <- [1, 2, 3, 4][2:3] <- "\n"
+	out <- "compare lists: [1, 2, 3, 4] == [1, 2, 3, 4][2:3] => " <- [1, 2, 3, 4] == [1, 2, 3, 4][2:3] <- "\n"
+
+	conc with
+		role u as current
+		role b as (proc user. select user of { true <- OK: term; KO: x int <- user} ) u
+
+	conc with
+		role u as current
+		role a as (
+				proc user.
+					r record { a int } <- user
+					out <- "receive internal record: " <- r <- "\n"
+					user <- foo
+			) u
+
+	a <- r
+	g senderSession <- a
+
+	conc with
+		role u as current
+		role f as g u
+
+	list [float] <- f
+	p packet <- f
+	i int <- f
+
+	out <- "receive from process: " <- list <- " " <- p <- " " <- i <- "\n"
+
+	branch b of
+		OK: term
+		KO: b <- 20
+

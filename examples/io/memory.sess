@@ -1,0 +1,36 @@
+val write as {
+	service: "memory"
+	action: "write"
+	registryID: "42"
+}
+
+val writeA as {
+	service: "memory"
+	action: "write"
+	registryID: "42"
+	field: "a"
+}
+
+val readA as {
+	service: "memory"
+	action: "read"
+	registryID: "42"
+	field: "a"
+}
+
+main: local.end
+proc main.
+	out[write] <-	{
+						a: "string"
+						b: true
+						c: {
+							d: 4
+						}
+						e: [1,2,3]
+					}
+
+	out[writeA] <- "hello"
+	x string <- inp[readA]
+	out <- x <- "\n"
+
+

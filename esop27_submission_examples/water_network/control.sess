@@ -1,0 +1,91 @@
+import esop27_submission_examples.water_network.simulator as sim
+
+type configuration global s5 s7 estimator controller pump.
+	s5 -> estimator: sim.flowState.
+	s7 -> estimator: sim.flowState.
+	estimator -> controller: float.
+	controller -> pump {
+		ON: rec
+	} or {
+		OFF: rec
+	}
+
+headSensorProxy: init u. u?string | local adv. adv!float. rec
+proc headSensorProxy(state string) adv.
+	hs sim.headState = sim.readHeadState(state)
+	adv <- hs.head
+	rec headSensorProxy<state> adv
+
+
+flowSensorProxy: init u. u?string | local adv. adv!sim.flowState. rec
+proc flowSensorProxy(state string) adv.
+  fs sim.flowState = sim.readFlowState(state)
+  adv <- fs
+  rec flowSensorProxy<state> adv
+
+type estInfo record {
+	volume float
+	height float
+	tstamp int
+}
+
+est: init updater. updater?estInfo | configuration (estimator) 
+proc est(r estInfo) s5 s7 c.
+	fs1 sim.flowState <- s5
+	fs2 sim.flowState <- s7
+
+	let t as
+    	if   (fs1.timestamp == fs2.timestamp) && (r.tstamp < fs1.timestamp)
+    	then {  volume: r.volume +
+        	            (fs1.flow - fs2.flow) * (fs1.timestamp - r.tstamp)
+            	height: r.height
+            	tstamp: fs1.timestamp
+             }
+    	else { volume: r.volume, height: r.height, tstamp: r.tstamp }
+  	c <- t.volume / t.height
+
+  	rec est<t> s5 s7 c 
+
+contr: init updater. updater?bool | configuration(controller)
+proc contr(state bool) est pump.
+	height float <- est
+
+	if 		(not state && height < 20) || (state && height < 30)
+	then	pump <- ON
+			rec contr<true> est pump 
+
+	else	pump <- OFF
+			rec contr<false> est pump 
+
+pump: configuration(pump)
+proc pump contr.
+	branch contr of
+		ON:		status bool = sim.actuatePump(true)
+				rec pump contr
+		OFF:	status bool = sim.actuatePump(false)
+				rec pump contr
+
+
+startHomeostasisConfiguration: local. end
+proc startHomeostasisConfiguration.
+	conc with
+		role s6 as headSensorProxy<"tank_level"> c
+		role c as contr<false> s6 p
+		role p as pump c
+
+startConfiguration: local. end
+proc startConfiguration.
+	conc with
+		role s5 as flowSensorProxy<"p1_flow"> estimator 
+		role s7 as flowSensorProxy<"p2_flow"> estimator
+		role estimator as est<{ volume: 0, height: 10, tstamp: 0 }> s5 s7 c 
+		role c as contr<false> estimator p
+		role p as pump c
+
+
+main: local. end
+proc main.
+	conc with
+		role sim as sim.startWDNSimulator
+	conc with
+		role start as startConfiguration

@@ -1,0 +1,13 @@
+main: local. end
+proc main.
+    let x [int] as [1, 2, 3, 2, 1]
+    out <- "list x [int] => " <- x <- "\n\n"
+
+    // test list index out of bounds
+    out <- "test list access out of bounds: x[10] => " <- x[10] <- "\n\n"
+
+    // testing runtime error
+    out <- "test condition: if 1/0 < 3 => "
+    if 1/0 < 3
+    then term
+    else term

@@ -1,0 +1,14 @@
+foo: local user. user?io 
+
+proc foo user.
+	x io <- user
+	out[x] <- "foo process writing in file\n"
+
+main: local.end
+proc main.
+	conc with 
+		role this as current
+		role f as foo this
+
+	h io <- inp[{service: "io", action: "open", path: "out.txt", perms: "create"}]
+	f <- h

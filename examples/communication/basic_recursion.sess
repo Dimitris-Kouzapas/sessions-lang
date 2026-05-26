@@ -1,0 +1,31 @@
+type ab context {
+    alice:  select bob { OK: bob!int. rec } or { KO: end }
+    bob:    branch alice { OK: alice?int. rec } or { KO: end }
+}
+
+aliceProc: init u. u?int | ab(alice)
+proc aliceProc {u} b.
+    index int <- u
+    select b of
+        index < 10 <- OK:
+            out <- "alice sends " <- index <- " to bob\n"
+            b <- index
+            rec  aliceProc{(proc {u}. u <- index + 1)} b
+        KO:
+            out <- "alice terminates\n"
+
+bobProc: ab(bob)
+proc bobProc a.
+    branch a of
+        OK:
+            x int <- a
+            out <- "bob received " <- x <- " from alice\n"
+            rec bobProc a
+        KO:
+            out <- "bob terminates\n"
+
+main: local. end
+proc main.
+    conc with
+        role a as aliceProc{proc {u}. u <- -1} b
+        role b as bobProc a

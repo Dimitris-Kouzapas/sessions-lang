@@ -1,0 +1,25 @@
+ioProc: local user. user!string. user!string
+proc ioProc user.
+    let conf as {
+        service: "io",
+        action: "open",
+        path:"./examples/io/inputFile.txt"
+    }
+    file io <- inp[conf]
+    input1 string <- inp[file]
+    input2 string <- inp[file]
+    user <- input1 <- input2
+
+main: local. end
+proc main.
+	conc with
+		role this as current
+		role f as ioProc this
+
+	x string <- (y string <- f)
+
+	out <- "main receives " <- y <- "\n"
+	out <- "main receives " <- x <- "\n"
+
+	out <- x[5] <- " " <- x[4] + x[5] + x[5] + " " + x[1:] <- "\n"
+  

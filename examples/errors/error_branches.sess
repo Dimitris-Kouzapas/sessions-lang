@@ -1,0 +1,65 @@
+aliceSelect: local bob.
+	select bob {
+		OK: bob!int
+	} or {
+		KO: bob?int
+	}
+
+proc aliceSelect bob.
+	conc with
+		role this as current
+		role c as carol this
+	select bob of
+		true <- OK:	bob <- 10
+					y int <- c
+				KO:	x int <- bob
+					c <- x
+
+aliceIf: local bob.
+	select bob {
+		OK: bob!int
+	} or {
+		KO: bob?int
+	}
+
+proc aliceIf bob.
+	conc with
+		role this as current
+		role c as carol this
+	if 		true
+	then	bob <- OK
+			bob <- 10
+			y int <- c
+	else 	bob <- KO
+			x int <- bob
+			c <- x
+
+
+bob: local alice.
+	branch alice {
+		OK: alice?int
+	} or {
+		KO: alice!int
+	}
+
+proc bob alice.
+	conc with
+		role this as current
+		role c as carol this
+	branch alice of
+		OK:	x int <- alice
+			c <- 10
+		KO:	alice <- 10
+			x int <- c
+
+carol: local alice.
+	alice?int
+
+proc carol alice.
+	x int <- alice
+
+main: local. end
+proc main.
+	conc with
+		role a as aliceSelect b
+		role b as bob a

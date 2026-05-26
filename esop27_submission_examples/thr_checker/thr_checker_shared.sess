@@ -1,0 +1,27 @@
+shared a sync {
+  chan: global sender receiver. sender -> receiver: int
+  requester: receiver 
+}
+
+clientProc: local w. w!int. w?bool
+proc clientProc w.
+  w <- 15
+  ok bool <- w
+  let msg string as if ok then "passes" else "does not pass"
+  out <- "Value 15 " <- msg <- " the threshold\n"
+
+workerProc: local c. c?int. c!bool
+proc workerProc c.
+  req(a) with
+    role receiver as current
+  threshold int <- sender
+  value int <- c
+  c <- value > threshold
+
+main: local. end
+proc main.
+  conc with
+    role c as clientProc w
+    role w as workerProc c
+  acc(a) with
+    role sender as ( proc r. r <- 10 ) receiver

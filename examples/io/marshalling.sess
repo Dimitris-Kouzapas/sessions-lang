@@ -1,0 +1,39 @@
+type packet record {
+	one		string
+	three 	bool
+	five 	int
+	eight 	[int]
+}
+
+main: local. end
+proc main.
+	let r as {
+		one:	"two"
+		three:	true
+		five:	6 + 7
+		eight:	[9, 10, 11, 12 + 13]
+	}
+
+	let config as {
+		service:	"json",
+		action:		"marshal",
+		value:		r
+	}
+
+	x string <- inp[config]
+
+	out <- "record r => " <- r <- "\n"
+	out <- "marshalled string value: " <- x <- "\n"
+
+
+	let y as "{\"one\": \"twotwo\", \"three\": false, \"five\": 13, \"eight\": [9, 10, 11, 12, 25, 3]}"
+	out <- "string y => " <- y <- "\n"
+	let uconfig as {
+		service:	"json"
+		action:		"unmarshal"
+		value:		y
+	}
+	value packet <- inp[uconfig]
+	out <- "unmarshalled packet => " <- value <- "\n"
+
+

@@ -1,0 +1,161 @@
+type flowState record {
+	flow float,
+	timestamp  int
+}
+
+type headState record {
+	head float,
+	timestamp  int
+}
+
+val writeMemory as {
+	service:	"memory",
+	action: 	"write",
+	registryID:	"wdn",
+}
+
+val readMemory as {
+	service:	"memory",
+	action:		"read",
+	registryID:	"wdn",
+}
+
+val sleepService as {
+	service: "time"
+	action: "sleep"
+	unit: "ms"
+}
+
+readHeadState: local u. u?string. u!headState
+proc readHeadState user.
+	f string <- user
+	value headState <- inp[ {service: "memory", action: "read", registryID: "wdn", field: f} ]
+	user <- value
+
+readFlowState: local u. u?string. u!flowState
+proc readFlowState user.
+	f string <- user
+	value flowState <- inp[ {service: "memory", action: "read", registryID: "wdn", field: f} ]
+	user <- value
+
+actuatePump: local u. u?bool. u!bool
+proc actuatePump user.
+	signal bool <- user
+	out[{service: "memory", action: "write", registryID: "wdn", field: "pumpStatus"}] <- signal
+	user <- signal
+
+type industrialProcess record {
+	r_head		headState,
+	u_flow		flowState,
+	j_head		headState,
+	j_demand	flowState,
+	p1_flow		flowState,
+	tank_level	headState,
+	p2_flow		flowState,
+	d_demand	flowState,
+	tank_volume	float,
+	tank_height	int,
+	pumpStatus	bool,
+	// sensor liveness status
+	s1			bool,
+	s2			bool,
+	s3			bool,
+	s4			bool,
+	s5			bool,
+	s6			bool,
+	s7			bool,
+	s8			bool,
+}
+
+
+startWDNSimulator: local. end 
+proc startWDNSimulator.
+	out[writeMemory] <-	{
+						r_head:		{head: 0., timestamp: 0},	//s1
+						u_flow:		{flow: 0., timestamp: 0},	//s2
+						j_head:		{head: 0., timestamp: 0},	//s3
+						j_demand:	{flow: 0., timestamp: 0},	//s4
+						p1_flow:	{flow: 0., timestamp: 0},	//s5
+						tank_level:	{head: 0., timestamp: 0},	//s6
+						p2_flow:	{flow: 0., timestamp: 0},	//s7
+						d_demand:	{flow: 0., timestamp: 0},	//s8
+						tank_volume:0.,
+						tank_height:10,
+						pumpStatus:	false,						//actuator
+						s1:			true,
+						s2:			true,
+						s3:			true,
+						s4:			true,
+						s5:			true,
+						s6:			true,
+						s7:			true,
+						s8:			true,			
+					}
+
+	conc with
+		role iw as industrialWDN<
+			{	distribution: {
+					inflow: [0.,1.,2.,3.,4.,5.,4.,3.,2.,1.],
+					outflow: [1.,1.,2.,2.,3.,3.,4.,4.,5.,5.]
+				},
+				len: 10,
+				timestep: 0
+			}
+		>
+
+type simulationParameters record {
+	distribution	record {
+						inflow [float],
+						outflow [float]
+					},
+	len				int,
+	timestep 		int,
+}
+
+shared wdnChannel async iw {}
+
+industrialWDN: init user. user?simulationParameters | local. end
+proc industrialWDN {user}.
+	r simulationParameters <- user
+
+	ip industrialProcess <- inp[readMemory]
+
+	let newHead as if ip.pumpStatus then 15. else 0.
+	let pumpFlow as if ip.pumpStatus then 10. else 0.
+
+	let jDemand as r.distribution.inflow[r.timestep % r.len]
+	let p1Flow as if pumpFlow - jDemand >= 0 then pumpFlow - jDemand else 0.
+	let p2Flow as r.distribution.outflow[r.timestep % r.len]
+
+	let tVolume as (ip.tank_volume + p1Flow) - p2Flow
+	let tankVolume as if tVolume > 0. then tVolume else 0.
+	let tankLevel as tankVolume / ip.tank_height
+
+	out[writeMemory] <- {
+							r_head:		{head: 0., timestamp: r.timestep},			//s1
+							u_flow:		{flow: pumpFlow, timestamp: r.timestep},	//s2
+							j_head:		{head: newHead, timestamp: r.timestep},		//s3
+							j_demand:	{flow: jDemand, timestamp: r.timestep},		//s4
+							p1_flow:	{flow: p1Flow, timestamp: r.timestep},		//s5
+							tank_level:	{head: tankLevel, timestamp: r.timestep},	//s6
+							p2_flow:	{flow: p2Flow, timestamp: r.timestep},		//s7
+							d_demand:	{flow: p2Flow, timestamp: r.timestep},		//s8
+							tank_volume:tankVolume,
+							tank_height:ip.tank_height,
+							pumpStatus:	ip.pumpStatus,								//actuator
+							s1:			true,
+							s2:			true,
+							s3:			true,
+							s4:			true,
+							s5:			true,
+							s6:			true,
+							s7:			true,
+							s8:			true,	
+						}
+
+	out <- "timestamp: " <- r.timestep <- ": " <- { p1Flow: p1Flow, p2Flow: p2Flow, volume: tankVolume, tankLevel: tankLevel, pump_status: ip.pumpStatus } <- "\n"
+
+	out[sleepService] <- 10
+
+	conc with
+		role iw as industrialWDN<{distribution: r.distribution, len: r.len, timestep: r.timestep + 1}>

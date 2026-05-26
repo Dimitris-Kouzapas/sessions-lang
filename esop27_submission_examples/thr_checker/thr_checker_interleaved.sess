@@ -1,0 +1,30 @@
+type checker global worker client.
+    client -> worker: int.
+    worker -> client: bool
+
+shared a sync {
+    chan: global i w. i -> w: int
+    requester: w
+}
+
+clientProc: checker(client)
+proc clientProc w.
+    w <- 15
+    ok bool <- w
+    let msg string as if ok then "passes" else "does not pass"
+    out <- "Value 15 " <- msg <- " the threshold\n"
+
+workerProc: checker(worker)
+proc workerProc c.
+    req(a) with 
+        role w as current
+    threshold int <- i
+    value int <- c
+    c <- value > threshold
+
+main: local. end
+proc main.
+    conc with
+        role p as (proc. acc(a) with role i as (proc i. i <- 10) w)
+        role c as clientProc w
+        role w as workerProc c
