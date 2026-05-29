@@ -1,0 +1,19 @@
+apply: local u. u?(local w. w?int. w!int).
+                u!int
+proc apply u. 
+    f (local w. w?int. w!int) <- u
+    conc with
+        role c as current
+        role f1 as f c
+    res int <- (f1 <- 5)
+    u <- res
+
+main: local. end
+proc main.
+    let inc as (proc u. x int <- u
+                        u <- x + 1)
+    conc with 
+        role c as current
+        role p as apply c
+    result int <- (p <- inc)
+    out <- result <- "\n"
