@@ -63,7 +63,7 @@ Examples:
 ./sessions -ne esop27_submission_examples/login.sess
 ./sessions -p esop27_submission_examples/login.sess
 ./sessions -v esop27_submission_examples/login.sess
-./sessions esop27_submission_examples/water_network/control.sess
+./sessions water_network/control.sess
 ```
 
 ## Examples
@@ -82,9 +82,11 @@ The repository contains executable examples, including:
 .
 ├── ast/parser                      ANTLR grammar
 ├── ast/                            type checker, interpreter, and runtime environment
+├── epanet/                         ESOP 2027 digital twin control case study 
 ├── esop27_submission_examples/     ESOP 2027 submission examples
-├── lib/                            ANTLR jar and libraries
 ├── examples/                       executable programs
+├── lib/                            ANTLR jar and libraries
+├── main.go
 └── README.md
 ```
 
