@@ -56,4 +56,4 @@ main: local. end
 proc main.
     conc with
         role c as clientProc { proc {i}. i <- 0 } s
-        role s as serverProc c
+        role s as serverProc2 c
