@@ -1,6 +1,6 @@
 # sessions
 
-This repository contains the reference implementation of **\sessions**, a prototype executable language for multiparty session programming.
+This repository contains the reference implementation of **sessions**, a prototype executable language for multiparty session programming.
 
 ## Requirements
 
