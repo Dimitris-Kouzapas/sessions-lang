@@ -1,0 +1,106 @@
+val mqttID 			as "mqttClient"
+val address 		as "127.0.0.1:1883"
+val clientName 		as "go-controller"
+val qos				as 1
+val size  			as 1000
+val policy 			as "Block"
+
+/***********************************************************
+ * demand sensor
+ ***********************************************************/
+
+type demand_info record {
+	hour			int
+	demand 			float
+}
+
+demand: init i. i?string | local u. u!demand_info. rec
+proc demand(demandID string) u.
+	let mqtt as {
+		service:	"io",
+		action: 	"mqtt",
+		id:			mqttID,
+		address:	address,
+		client:		clientName,
+		qos:		qos,
+		size:		size,
+		topic:		"sim/" + demandID,
+		policy:		policy,
+	}
+	s string  <- inp[mqtt]
+	di demand_info <- inp[{service: "json", action: "unmarshal", value: s}]
+	u <- di
+	rec demand<demandID> u
+
+/***********************************************************
+ * tank level sensor
+ ***********************************************************/
+
+type level_reading record {
+	hour		int
+	level 		float
+}
+
+level: init i. i?string | local u. u!level_reading. rec
+proc level {i} u.
+	tankID string <- i
+	let mqtt as {
+		service:	"io",
+		action: 	"mqtt",
+		id:			mqttID,
+		address:	address,
+		client:		clientName,
+		qos:		qos,
+		size:		size,
+		topic:		"sim/" + tankID,
+		policy:		policy,
+	}
+	s string  <- inp[mqtt]
+	lr level_reading <- inp[{service: "json", action: "unmarshal", value: s}]
+	u <- lr
+	rec level<tankID> u
+
+/***********************************************************
+ * pump actuator 
+ ***********************************************************/
+
+type schedule record {
+	seconds [int]
+	mode 	[int]
+}
+
+pump: init i. i?string | local c. c?schedule. rec
+proc pump {i} c.
+	pumpID string <- i
+	sched schedule <- c
+
+	conc with
+		role a as actuate_pump<pumpID, sched>
+
+	rec pump<pumpID> c
+
+actuate_pump: init i. i?string. i?schedule | local. end
+proc actuate_pump(pumpID string, sched schedule). 
+	let mqtt as {
+		service:	"io",
+		action: 	"mqtt",
+		id:			mqttID,
+		address:	address,
+		client:		clientName,
+		qos:		qos,
+		topic:		"sim/" + pumpID,
+	}
+
+	if sched.seconds == []
+	then 	term
+	else
+			let signal as {
+				seconds:	sched.seconds[0],
+				signal: 	sched.mode[0],
+			}
+
+			command string <- inp[{service: "json", action: "marshal", value: signal}]
+			out[mqtt] <- command
+
+			conc with
+				role a as actuate_pump<pumpID, { seconds: sched.seconds[1:], mode: sched.mode[1:]}>

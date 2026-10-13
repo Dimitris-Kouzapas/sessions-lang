@@ -1,0 +1,186 @@
+import epanet.proxies
+
+type pump_status record {
+	pump1	int
+	pump2 	int
+	pump3 	int
+	booster int
+}
+
+type prediction record {
+	seconds [int]
+	order 	[pump_status]
+}
+
+/***********************************************************
+ * controller
+ ***********************************************************/
+
+controller: 	init i. i?int
+			| 	local tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster.
+					tank1_sensor?proxies.level_reading.
+					tank2_sensor?proxies.level_reading.
+					d_predictor!int.
+					e_predictor!int.
+					e_predictor!int.
+					d_predictor?[[float]].
+					e_predictor?[float].
+					pump1!proxies.schedule.
+					pump2!proxies.schedule.
+					pump3!proxies.schedule.
+					booster!proxies.schedule.
+					rec
+
+				/*select pump1 {
+					ON:  select pump2 {
+							ON:  select pump3 {  ON: select booster { ON: rec } or { OFF: rec } } or
+											  { OFF: select booster { ON: rec } or { OFF: rec } }
+						 } or {
+						 	OFF: select pump3 {  ON: select booster { ON: rec } or { OFF: rec } } or
+											  { OFF: select booster { ON: rec } or { OFF: rec } }
+						 }
+				} or {
+					OFF: select pump2 {
+							ON:  select pump3 {  ON: select booster { ON: rec } or { OFF: rec } } or
+											  { OFF: select booster { ON: rec } or { OFF: rec } }
+						 } or {
+						 	OFF: select pump3 {  ON: select booster { ON: rec } or { OFF: rec } } or
+											  { OFF: select booster { ON: rec } or { OFF: rec } }
+						 }
+				}*/
+
+proc controller {i} tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster.
+	horizon int <- i
+	tank1_reading proxies.level_reading <- tank1_sensor
+	tank2_reading proxies.level_reading <- tank2_sensor
+
+	let hour as tank1_reading.hour
+
+	d_predictor <- horizon
+	e_predictor <- horizon <- hour
+	d_predictions [[float]] <- d_predictor
+	e_predictions [float] <- e_predictor         
+
+	let request as {
+		hour: hour,
+		current_levels: [tank1_reading.level, tank2_reading.level],
+		demand_forecast: d_predictions,
+		prices: e_predictions,
+	}
+
+	let mqttPub as {
+		service:	"io",
+		action:		"mqtt",
+		id: 		proxies.mqttID,
+		client:		proxies.clientName,
+		address: 	proxies.address,
+		qos:		proxies.qos,
+		topic:		"sim/optimise"
+	}
+
+	mrequest string <- inp[{service: "json", action: "marshal", value: request}]
+	out[mqttPub] <- mrequest
+
+	let mqttGet as {
+		service:	"io",
+		action:		"mqtt",
+		id: 		proxies.mqttID,
+		client:		proxies.clientName,
+		address: 	proxies.address,
+		qos:		proxies.qos,
+		size:		proxies.size,
+		policy:		proxies.policy,
+		topic:		"sim/prediction"
+	}
+
+	response string <- inp[mqttGet]
+	pred prediction <- inp[{service: "json", action: "unmarshal", value: response}]
+
+	mode1 [int], mode2 [int], mode3 [int], modeb [int] = split(pred.order)
+
+	pump1 <- { seconds: pred.seconds, mode: mode1 }
+	pump2 <- { seconds: pred.seconds, mode: mode2 }
+	pump3 <- { seconds: pred.seconds, mode: mode3 }
+	booster <- { seconds: pred.seconds, mode: modeb }
+
+	out <- "tank1: " <- tank1_reading <- "\n"
+		<- "tank2: " <- tank2_reading <- "\n"
+		<- "prediction: " <- pred <- "\n\n"
+
+	rec controller<horizon> tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+
+	/*if 		p.order[0].pump1
+	then	pump1 <- ON
+			if 		p.order[0].pump2
+			then 	pump2 <- ON
+					if 		p.order[0].pump3
+					then	pump3 <- ON
+							if 		p.order[0].booster
+							then	booster <- ON
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+							else    booster <- OFF
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+					else 	pump3 <- OFF
+							if 		p.order[0].booster
+							then	booster <- ON
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+							else    booster <- OFF
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+			else 	pump2 <- OFF
+					if 		p.order[0].pump3
+					then	pump3 <- ON
+							if 		p.order[0].booster
+							then	booster <- ON
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+							else    booster <- OFF
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+					else 	pump3 <- OFF
+							if 		p.order[0].booster
+							then	booster <- ON
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+							else    booster <- OFF
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+	else 	pump1 <- OFF
+			if 		p.order[0].pump2
+			then 	pump2 <- ON
+					if 		p.order[0].pump3
+					then	pump3 <- ON
+							if 		p.order[0].booster
+							then	booster <- ON
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+							else    booster <- OFF
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+					else 	pump3 <- OFF
+							if 		p.order[0].booster
+							then	booster <- ON
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+							else    booster <- OFF
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+			else 	pump2 <- OFF
+					if 		p.order[0].pump3
+					then	pump3 <- ON
+							if 		p.order[0].booster
+							then	booster <- ON
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+							else    booster <- OFF
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+					else 	pump3 <- OFF
+							if 		p.order[0].booster
+							then	booster <- ON
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+							else    booster <- OFF
+									rec controller tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump2 pump3 booster
+
+*/
+
+split: local u. u?[pump_status]. u![int]. u![int]. u![int]. u![int]
+proc split u.
+	order [pump_status] <- u
+	if 		order == []
+	then 	u <- [] <- [] <- [] <- []
+	else 	
+			mode1 [int], mode2 [int], mode3 [int], modeb [int] = split(order[1:])
+			u <- [order[0].pump1] + mode1
+			  <- [order[0].pump2] + mode2
+			  <- [order[0].pump3] + mode3
+			  <- [order[0].booster] + modeb

@@ -1,0 +1,72 @@
+import epanet.proxies
+import epanet.demand
+import epanet.energy
+import epanet.controller
+
+type configuration record {
+  pumps               [string]
+  tanks               [string]
+  demands             [string]
+  hours               int
+  horizon             int
+  nominal             [[float]]
+  tariffs             [float]
+  tank1  record {
+        elevation     int
+        init_level    float
+        min_level     float
+        max_level     float
+        diameter      float
+      }
+  tank2  record {
+        elevation     int
+        init_level    float
+        min_level     float
+        max_level     float
+        diameter      float
+      }
+}
+
+val random_number_generator as {
+	service: "random"
+	action: "generator"
+	seed: 42
+}
+
+read_json: local u. u!configuration. end
+proc read_json u.
+  file io <- inp[{service: "io", action: "open", path: "./epanet/scripts/data/configuration.json", perms: "read", readLine: true}]
+  s string = read_file(file)
+  c configuration <- inp[{service: "json", action: "unmarshal", value: s}]
+  u <- c
+
+read_file: local u. u?io. u!string
+proc read_file u.
+  file io <- u
+  s string <- inp[file]
+  if    s != "\x00"
+  then  ss string = read_file(file)
+        u <- s + ss
+  else  u <- ""
+
+main: local. end
+proc main.
+  conf configuration = read_json()
+	rg io <- inp[random_number_generator]
+
+	conc with
+		role ls1  as proxies.level<conf.tanks[0]> c
+    role ls2  as proxies.level<conf.tanks[1]> c
+		role ds1  as proxies.demand<conf.demands[0]> dp
+    role ds2  as proxies.demand<conf.demands[1]> dp
+    role p1   as proxies.pump<conf.pumps[0]> c
+    role p2   as proxies.pump<conf.pumps[1]> c
+    role p3   as proxies.pump<conf.pumps[2]> c
+    role b    as proxies.pump<conf.pumps[3]> c
+
+		role dp as demand.predictor<conf.nominal, 24> ds1 ds2 c
+		role ep as energy.predictor<conf.tariffs, 24> c
+
+		role c  as controller.controller<conf.horizon> ls1 ls2 dp ep p1 p2 p3 b
+
+	out <- "controller started\n"

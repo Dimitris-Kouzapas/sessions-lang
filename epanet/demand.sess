@@ -1,0 +1,79 @@
+import epanet.proxies
+
+/***********************************************************
+ * demand prediction agent
+ ***********************************************************/
+
+predictor:	init i.
+				i?[[float]].
+				i?int
+		 |	local sensor1 sensor2 controller.
+				sensor1?proxies.demand_info.
+				sensor2?proxies.demand_info.
+				controller?int.
+				controller![[float]].
+				rec
+/*
+proc predictor(demand_distribution [float], distribution_size int) sensor controller.
+	di proxies.demand_info <- sensor
+	elements int <- controller
+
+	let index int as (di.timestamp / 3600) % distribution_size
+	// * calculate prediction: new_demand = demand * (1 - alpha) + reading * alpha
+	let demand float as (demand_distribution[index] * (1 - alpha)) + (di.demand * alpha)
+
+	let new_demand_distribution as demand_distribution[:index] + [demand] + demand_distribution[index+1:]
+
+	let d as
+		if 		distribution_size - index >= elements
+		then 	new_demand_distribution[index:index + elements]
+		else 	new_demand_distribution[index:] + new_demand_distribution[:elements - (distribution_size - index)]
+
+	controller <- d
+
+	rec predictor<new_demand_distribution, distribution_size> sensor controller
+*/
+
+/*val alpha as 0.05 //* how much that new reading affects the historic demand
+
+proc predictor(demand_distribution [[float]], distribution_size int) demand_sensor1 demand_sensor2 controller.
+	di1 proxies.demand_info <- demand_sensor1
+	di2 proxies.demand_info <- demand_sensor2
+
+	elements int <- controller
+
+	let index int as di1.hour % distribution_size
+
+	let demand1 float as (demand_distribution[index][0] * (1 - alpha)) + (di1.demand * alpha)
+	let demand2 float as (demand_distribution[index][1] * (1 - alpha)) + (di2.demand * alpha)
+
+	let new_demand_distribution as demand_distribution[:index] + [[demand1, demand2]] + demand_distribution[index+1:]
+
+	let d as
+		if 		distribution_size - index >= elements
+		then 	new_demand_distribution[index:index + elements]
+		else 	new_demand_distribution[index:] + new_demand_distribution[:elements - (distribution_size - index)]
+
+	//out <- "demand[" <- index <- ":" <- index + elements<- "]" <- d <- "\n"
+	controller <- d
+
+	rec predictor<new_demand_distribution, distribution_size> demand_sensor1 demand_sensor2 controller
+*/
+
+proc predictor(demand_distribution [[float]], distribution_size int) demand_sensor1 demand_sensor2 controller.
+	di1 proxies.demand_info <- demand_sensor1
+	di2 proxies.demand_info <- demand_sensor2
+
+	elements int <- controller
+
+	let index int as di1.hour % distribution_size
+
+	let d as
+		if 		distribution_size - index >= elements
+		then 	demand_distribution[index:index + elements]
+		else 	demand_distribution[index:] + demand_distribution[:elements - (distribution_size - index)]
+
+	controller <- d
+
+	rec predictor<demand_distribution, distribution_size> demand_sensor1 demand_sensor2 controller
+

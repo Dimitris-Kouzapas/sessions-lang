@@ -1,0 +1,74 @@
+/************************************************************
+ * energy price prediction agent
+ ************************************************************/
+
+/*val sigma as 0.1 // standard deviation
+
+predict:	local u.
+	   			u?[float].
+	   			u?int.
+	   			u?int.
+	   			u?int.
+	   			u?float.
+	   			u![float]
+
+proc predict u.
+	energy_price_distribution [float] <- u
+	distribution_size int <- u
+	elements int <- u
+	index int <- u
+	z float <- u
+
+	if 		elements == 0
+	then	u <- []
+	else 	list [float] = predict(energy_price_distribution, distribution_size, elements - 1, index + 1, z)
+			let i as index % distribution_size
+			u <- [energy_price_distribution[i] + (1 + sigma * z)] + list
+
+predictor:
+			init i.
+				i?[float].
+				i?int.
+		 		i?float.
+		 		i?io
+		 |	local u.
+				u?int.
+				u?int.
+				u![float].
+				rec
+
+proc predictor(energy_price_distribution [float], distribution_size int, prev_z float, random_number_generator io) u.
+	timestamp int <- u
+	elements int <- u
+	let index int as (timestamp / 3600) % distribution_size
+	random int <- inp[random_number_generator]
+	let epsilon float as ((random % 100) * 1.) / 100
+	let rho float as 0.85
+	let z as rho * prev_z + ((1 - rho^2)^0.5) * epsilon
+	prices [float] = predict(energy_price_distribution, distribution_size, elements, index, z)
+	u <- prices
+	rec predictor<energy_price_distribution, distribution_size, z, random_number_generator> u
+*/
+
+predictor:
+			init i.
+				i?[float].
+				i?int
+		 |	local u.
+				u?int.
+				u?int.
+				u![float].
+				rec
+
+proc predictor(energy_price_distribution [float], distribution_size int) u.
+	elements int <- u
+	hour int <- u
+	let index int as hour % distribution_size
+
+	let prices as
+		if 		distribution_size - index >= elements
+		then 	energy_price_distribution[index:index + elements]
+		else 	energy_price_distribution[index:] + energy_price_distribution[:elements - (distribution_size - index)]
+
+	u <- prices
+	rec predictor<energy_price_distribution, distribution_size> u
