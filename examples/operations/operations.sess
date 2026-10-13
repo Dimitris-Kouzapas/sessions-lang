@@ -4,10 +4,10 @@ type senderSession
 		user!packet.
 		user!int
 
-# type definition
+// type definition
 type packet record { a bool }
 
-# global values
+// global values
 val myPacket as { a: true; b: 2; c: 2.2; d: "hello"; }
 val myList   as [1, 2, 3, 4, 3, 2, 1]
 val myInt as 3

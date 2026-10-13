@@ -1,0 +1,18 @@
+get: local u. u?[record { key string; value int }]. u?string. u!int
+proc get u.
+	list [record { key string; value int }] <- u
+	key string <- u
+	if		list == []
+	then	u <- -1
+	else 	if 		list[0].key == key
+			then 	u <- list[0].value
+			else 	v int = get(list[1:], key)
+					u <- v
+
+put: local u. u?[record { key string; value int }]. u?string. u?int. u![record { key string; value int }]
+proc put u.
+	list [record { key string; value int }] <- u
+	key string <- u
+	value int <- u
+	u <- [{key: key, value: value}] + list 
+

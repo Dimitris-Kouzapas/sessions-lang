@@ -3,7 +3,8 @@ proc ioProc user.
     let conf as {
         service: "io",
         action: "open",
-        path:"./examples/io/inputFile.txt"
+        path:"./examples/io/inputFile.txt",
+        readLine: true
     }
     file io <- inp[conf]
     input1 string <- inp[file]

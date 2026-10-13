@@ -14,53 +14,14 @@ proc fib user.
 			prev int <- f2 <- x - 1
 			user <- prevprev + prev
 
-fastfib:
-	local user. user?int.
-				user!int
-proc fastfib u.
-	x int <- u
-	conc with
-		role u as current
-		role f as fastfib_ u
-
-	f <- [0, 1] <- 1 <- x
-	list [int] <- f
-	r int <- f
-	u <- list[r]
-
-
-fastfib_:
-	local user. user?[int].
-				user?int.
-				user?int.
-				user![int].
-				user!int
-proc fastfib_ user.
-	list [int] <- user
-	index int  <- user
-	    x int  <- user
-
-	if 		x <= index
-	then 	user <- list <- index
-	else	conc with
-				role p as current
-				role f1 as fastfib_ p
-				role f2 as fastfib_ p
-
-			f2 <- list <- index <- (x - 2)
-			index2 int <- (list2 [int] <- f2)
-			f1 <- list2 <- index2 <- (x - 1)
-			index3 int <- (list3 [int] <- f1)
-			user <- list3 + [list3[x - 1] + list3[x - 2]] <- index3 + 1
-
 main: local. end
 proc main.
 	conc with
 		role p as current
-		role f as fastfib p
+		role f as fib p
 
 	out <- "Give an integer: "
 	input int <- inp
 
 	r int <- (f <- input)
-	out <- r <- "\n"
+	out <- "fib " <- input <- " = " <- r <- "\n"

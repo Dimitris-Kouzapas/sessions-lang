@@ -396,6 +396,8 @@ func (openFileExecutor) execute(conf *recordExpr, _ typedef) (expression, error)
 		return nil, fmt.Errorf("io/open %q: %w", path, err)
 	}
 
+	readLine, _ := conf.readBool("readLine")
+
 	h := &fileHandle{
 		emptyHandle: emptyHandle{baseNode: baseNode{line: conf.line}},
 		f:  sysio.NewFile(
@@ -405,6 +407,7 @@ func (openFileExecutor) execute(conf *recordExpr, _ typedef) (expression, error)
 			),
 		path: path,
 		perms: perms,
+		readLine: readLine,
 	}
 	return h, nil
 }
@@ -598,10 +601,11 @@ func (_ *emptyHandle) String() string { return "io emptyHandle { }" }
 
 type fileHandle struct {
 	emptyHandle
-	f 		*sysio.File
+	f 			*sysio.File
 
-	path 	string
-	perms 	string
+	path 		string
+	perms 		string
+	readLine	bool
 }
 
 func (h *fileHandle) output(v expression) error {
@@ -628,13 +632,16 @@ func (h *fileHandle) input(tdef typedef) (expression, error) {
 	}
 	text := strings.TrimRight(line, "\r\n")
 
-	switch st := tdef.(type) {
-		case *stringType:
-			return newStringExpr(text, st.line), nil
-		default:
-			err := fmt.Errorf("expecting string type; found %q instead.", tdef.String())
-			return tdef.defaultValue(), err
+	if h.readLine {
+		switch st := tdef.(type) {
+			case *stringType:
+				return newStringExpr(text, st.line), nil
+			default:
+				err := fmt.Errorf("expecting string type; found %q instead.", tdef.String())
+				return tdef.defaultValue(), err
+		}
 	}
+	return unmarshal(tdef, text)
 }
 
 func (h *fileHandle) close() error {
@@ -644,7 +651,7 @@ func (h *fileHandle) close() error {
 func (h *fileHandle) evaluate(_ *evaluationContext) expression { return h }
 func (h *fileHandle) prettyPrint(iw util.IndentedWriter) { iw.Print(h.String()) }
 func (h *fileHandle) String() string {
-	return "io fileHandle { path: " + h.path + ", perms: " + h.perms + " }"
+	return fmt.Sprintf("io fileHandle { path: %v, perms: %v, readLine: %v }", h.path, h.perms, h.readLine)
 }
 
 /******** stdio handle ********/
@@ -654,6 +661,7 @@ var stdoutHandle *fileHandle = &fileHandle {
 	f: sysio.NewFile(os.Stdout, false, true),
 	path: "Stdout",
 	perms: "append",
+	readLine: false,
 }
 
 var stdinHandle *fileHandle = &fileHandle {
@@ -661,6 +669,7 @@ var stdinHandle *fileHandle = &fileHandle {
 	f: sysio.NewFile(os.Stdin, true, false),
 	path: "Stdin",
 	perms: "read",
+	readLine: false,
 }
 
 /**********************************************************************************

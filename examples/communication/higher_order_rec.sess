@@ -1,12 +1,11 @@
 send42: init u. u?int | local p. p!int. rec
 proc send42{u} p.
 	index int <- u
-	let processes as
-		[
-			send42,
-			send24,
-			send37,
-		]
+	let processes as [
+		send42,
+		send24,
+		send37,
+	]
 	p <- 42
 	rec processes[index]<(index+1)%3> p
 
@@ -14,24 +13,22 @@ proc send42{u} p.
 send24: init u. u?int | local p. p!int. rec
 proc send24{u} p.
 	index int <- u
-		let processes as
-		[
-			send42,
-			send24,
-			send37,
-		]
+	let processes as [
+		send42,
+		send24,
+		send37,
+	]
 	p <- 24
 	rec processes[index]<(index+1)%3> p
 
 send37: init u. u?int | local p. p!int. rec
 proc send37{u} p.
 	index int <- u
-		let processes as
-		[
-			send42,
-			send24,
-			send37,
-		]
+	let processes as [
+		send42,
+		send24,
+		send37,
+	]
 	p <- 37
 	rec processes[index]<(index+1)%3> p
 

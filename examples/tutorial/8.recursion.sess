@@ -3,8 +3,8 @@ factorial: local caller.
 					caller!int
 proc factorial caller.
 	x int <- caller
-	if 		x == 1
-	then	caller <- 1
+	if 		x <= 1
+	then	caller <- x
 	else 	conc with
 				role caller as current
 				role f as factorial caller

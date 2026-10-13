@@ -1,6 +1,6 @@
 function: local. end
 proc function.
-	out <- "Hello from inside function\n"
+	out <- "Hello from inside process\n"
 
 main: local. end
 proc main.

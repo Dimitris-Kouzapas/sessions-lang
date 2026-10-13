@@ -3,6 +3,7 @@ proc main.
 	let mqttConfig as {
 		service:	"io",
 		action: 	"mqtt",
+		id:			"id",
 		address:	"tcp://broker.hivemq.com:1883",
 		client:		"i-am-client-123321",
 		topic:		"myFirstTopic",
