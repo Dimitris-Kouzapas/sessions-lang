@@ -603,13 +603,11 @@ func (sv *sessionsVisitor) VisitMulop(ctx *parser.MulopContext) (string, int) {
 func (sv *sessionsVisitor) VisitUnary(ctx *parser.UnaryContext) expression {
     if ctx.Unary() != nil {
         lexpr := sv.VisitUnary(ctx.Unary().(*parser.UnaryContext))
-        var line int
         if ctx.NOT() != nil {
-            line = ctx.NOT().GetSymbol().GetLine()
+            line := ctx.NOT().GetSymbol().GetLine()
             return newNotExpr(lexpr, ctx.NOT().GetText(), line)
         } else if ctx.Sumop() != nil {
-            var op string
-            op, line = sv.VisitSumop(ctx.Sumop().(*parser.SumopContext))
+            op, line := sv.VisitSumop(ctx.Sumop().(*parser.SumopContext))
             return newSignExpr(lexpr, op, line)
         }
     }
@@ -671,7 +669,8 @@ func (sv *sessionsVisitor) VisitLiteral(ctx *parser.LiteralContext) expression {
     } else if ctx.STRING_LIT() != nil /*&& ctx.NOTHING() == nil*/ {
         str := ctx.STRING_LIT().GetText()
         str = str[1:len(str)-1]
-        return newStringExpr(str, ctx.STRING_LIT().GetSymbol().GetLine())
+        //return newStringExpr(str, ctx.STRING_LIT().GetSymbol().GetLine())
+        return newStringExpr(unQuote(str), ctx.STRING_LIT().GetSymbol().GetLine())
     }
     return nil
 }
@@ -782,7 +781,22 @@ func (sv *sessionsVisitor) VisitReceiveMacro(ctx *parser.ReceiveMacroContext) ([
 
 func (sv *sessionsVisitor) VisitPrimaryTerm(ctx *parser.PrimaryTermContext) expression {
     if ctx.Literal() != nil {
-        return sv.VisitLiteral(ctx.Literal().(*parser.LiteralContext))
+        expr := sv.VisitLiteral(ctx.Literal().(*parser.LiteralContext))
+        if ctx.Sumop() != nil {
+            op, line := sv.VisitSumop(ctx.Sumop().(*parser.SumopContext))
+            // hack to adjust the signs
+            if op == "-" {
+                switch v := expr.(type) {
+                    case *intExpr:
+                        expr = &intExpr{baseNode: baseNode{line: v.line}, integer: -v.integer}
+                    case *floatExpr:
+                        expr = &floatExpr{baseNode: baseNode{line: v.line}, floating: -v.floating}
+                    default:
+                        expr = newSignExpr(expr, op, line) 
+                }
+            }
+        }
+        return expr
     } else if ctx.PrimaryList() != nil {
         return sv.VisitPrimaryList(ctx.PrimaryList().(*parser.PrimaryListContext))
     } else if ctx.PrimaryRecord() != nil {

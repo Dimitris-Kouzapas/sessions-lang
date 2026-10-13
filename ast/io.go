@@ -12,6 +12,7 @@ import (
 
 	"sessions/ast/util"
 	"sessions/ast/sysio"
+	"sessions/ast/api"
 )
 
 /**********************************************************************************
@@ -32,17 +33,24 @@ type outputHandleExecutor interface {
 
 type actionKey struct{ srv, ac string }
 
+//TODO give a format for each executor
 var inputExecutors = map[actionKey]inputHandleExecutor {
 	actionKey{"io", "open"}: openFileExecutor{},
-	actionKey{"io", "mqtt"}: mqttClientExecutor{},
+	actionKey{"io", "mqtt"}: mqttSubscriberExecutor{},
 	actionKey{"memory", "read"}: memoryReaderExecutor{},
 	actionKey{"json", "marshal"}: marshalExecutor{},
 	actionKey{"json", "unmarshal"}: unmarshalExecutor{},
 	actionKey{"time", "current"}: timeExecutor{},
-	actionKey{"random", "generator"}: randomGeneratorExecutor{},
+	actionKey{"random", "generator"}: randomGeneratorExecutor{}, 
+
+	actionKey{"runtime", "compile"}: compileExecutor{},
+
+	actionKey{"api", "connect"}: connectAPIExecutor{},
+	actionKey{"api", "request"}: requestAPIExecutor{},
 }
 
 var outputExecutors = map[actionKey]outputHandleExecutor{
+	actionKey{"io", "mqtt"}: mqttPublisherExecutor{},
 	actionKey{"memory", "write"}: memoryWriterExecutor{},
 	actionKey{"time", "sleep"}: sleepExecutor{},
 }
@@ -57,6 +65,65 @@ func findOutputExecutor(srv, ac string) (outputHandleExecutor, bool) {
 	return c, ok
 }
 
+/**********************************************************************************
+ * handleExecutors
+ **********************************************************************************/
+
+ /******* server executor *********/
+
+ type connectAPIExecutor struct{}
+
+ func (connectAPIExecutor) execute(conf *recordExpr, _ typedef) (expression, error) {
+ 	name, ok := conf.readString("name")
+ 	if !ok {
+ 		return nil, fmt.Errorf("api: missing api name")
+ 	}
+
+ 	api, err := api.GetAPI(name)
+ 	if err != nil {
+ 		return nil, err
+ 	}
+ 	aHandle := &apiHandle {
+ 		emptyHandle:	emptyHandle{baseNode: baseNode{line: conf.line}},
+ 		api: api,
+ 		request: "",
+ 	}
+ 	return aHandle, nil
+ }
+
+type requestAPIExecutor struct{}
+
+ func (requestAPIExecutor) execute(conf *recordExpr, tdef typedef) (expression, error) {
+ 	expr, ok1 := conf.exprMap["api"]
+ 	var err1 error
+ 	if !ok1 {
+ 		err1 = fmt.Errorf("api: missing api")
+ 	}
+
+ 	request, ok2 := conf.exprMap["request"]
+ 	var err2 error
+ 	if !ok2 {
+ 		err2 = fmt.Errorf("api: missing request")
+ 	}
+
+ 	value, ok3 := request.(valueI)
+ 	var err3 error
+ 	if !ok3 {
+ 		err3 = fmt.Errorf("api: request is not a value")
+ 	}
+
+ 	if !(ok1 && ok2 && ok3) {
+		return nil, util.JoinSep("; ", err1, err2, err3)
+	}
+
+ 	aHandle, ok := expr.(*apiHandle)
+ 	if !ok {
+ 		return nil, fmt.Errorf("api: expected api value")
+ 	}
+
+ 	aHandle.request = value.marshal()
+ 	return aHandle.input(tdef)
+ }
 
 /******** marshal executor ********/
 
@@ -90,7 +157,7 @@ func (unmarshalExecutor) execute(conf *recordExpr, tdef typedef) (expression, er
 	return unmarshal(tdef, escaped)
 }
 
-/******** marshal executor ********/
+/******** random executor ********/
 
 type randomGeneratorExecutor struct {}
 
@@ -119,25 +186,6 @@ func (randomGeneratorExecutor) execute(conf *recordExpr, _ typedef) (expression,
 	}, nil
 }
 
-/******** memory register executor ********/
-
-// type memoryRegisterExecutor struct{}
-
-// func (memoryRegisterExecutor) execute(conf *recordExpr, _ typedef) (expression, error) {
-// 	value, ok := conf.readRecord("value")
-// 	if !ok || value == nil {
-// 		return nil, errors.New("memory: missing value")
-// 	}
-
-// 	registryID, ok := conf.readString("registryID")
-// 	if !ok {
-// 		return nil, errors.New("memory: missing registryID") 
-// 	}
-
-// 	_, err := registerSchema(registryID, value)
-// 	return newTrueExpr(conf.line), err
-// }
-
 /******** memory reader executor ********/
 
 type memoryReaderExecutor struct{}
@@ -148,9 +196,6 @@ func (memoryReaderExecutor) execute(conf *recordExpr, _ typedef) (expression, er
 		return eHandle, errors.New("memory: missing registryID definition")
 	}
 
-	//if !ok {
-	//	return eHandle, errors.New("memory: missing field") 
-	//}
 	registry.mu.Lock()
 	defer registry.mu.Unlock()
 
@@ -196,43 +241,139 @@ func (memoryWriterExecutor) execute(conf *recordExpr) (expression, error) {
 	return h, nil
 }
 
-/******** mqtt executor ********/
+/******** mqtt subscribe executor ********/
 
-type mqttClientExecutor struct{}
+type mqttSubscriberExecutor struct{}
 
-func (mqttClientExecutor) execute(conf *recordExpr, _ typedef) (expression, error) {
-	var brokers []string
-	if broker, ok := conf.readString("address"); ok {
-		brokers = append(brokers, broker)
+func (mqttSubscriberExecutor) execute(conf *recordExpr, tdef typedef) (expression, error) {
+
+	id, ok := conf.readString("id")
+	if !ok {
+		return nil, errors.New("mqtt: missing mqtt id")
 	}
+
+	broker, _ := conf.readString("address")
 	client, _ := conf.readString("client")
 	username, _ := conf.readString("username")
 	password, _ := conf.readString("password")
 	size, _ := conf.readInt("size")
 
-	mqttClient, err1 := sysio.NewMQTTClient(brokers, client, username, password, size)
-
 	topic, _ := conf.readString("topic")
+
 	qos, ok := conf.readInt("qos")
 	if !ok {
 		qos = 1
 	}
 
-	var err2 error
-	if mqttClient != nil {
-		err2 = mqttClient.Subscribe(topic, byte(qos))
+	policyString, _ := conf.readString("policy")
+
+	var policy sysio.OverflowPolicy
+	switch policyString {
+		case "Block":
+			policy = sysio.Block
+		case "DropNewest":
+			policy = sysio.DropNewest
+		case "DropOldest":
+			policy = sysio.DropOldest
+		case "Latest":
+			policy = sysio.Latest
+		default:
+			policy = sysio.Latest
 	}
 
-	h := &mqttHandle {
+	mqttClient, err := sysio.NewMQTTClient(
+							id,
+							broker,
+							client,
+							username,
+							password,
+							policy,
+							size,
+						)
+	if err != nil {
+		return nil, err
+	}
+
+	err = mqttClient.Subscribe(topic, byte(qos))
+
+	if err != nil {
+		return nil, err
+	}
+
+	msg, err := mqttClient.Receive(topic)
+	if err != nil {
+		return tdef.defaultValue(), err
+	}
+
+	switch st := tdef.(type) {
+		case *stringType:
+			return newStringExpr(string(msg.Payload), st.line), nil
+		default:
+			return tdef.defaultValue(), fmt.Errorf("expected string type; found %q instead.", tdef.String())
+	}
+}
+
+/******** mqtt publish executor ********/
+
+type mqttPublisherExecutor struct{}
+
+func (mqttPublisherExecutor) execute(conf *recordExpr) (expression, error) {
+	id, ok := conf.readString("id")
+	if !ok {
+		return nil, errors.New("mqtt: missing mqtt id")
+	}
+
+	broker, _ := conf.readString("address")
+	client, _ := conf.readString("client")
+	username, _ := conf.readString("username")
+	password, _ := conf.readString("password")
+	size, _ := conf.readInt("size")
+
+	topic, _ := conf.readString("topic")
+
+	qos, ok := conf.readInt("qos")
+	if !ok {
+		qos = 1
+	}
+
+	retained, _ := conf.readBool("retained")
+
+	policyString, _ := conf.readString("policy")
+
+	var policy sysio.OverflowPolicy
+	switch policyString {
+		case "Block":
+			policy = sysio.Block
+		case "DropNewest":
+			policy = sysio.DropNewest
+		case "DropOldest":
+			policy = sysio.DropOldest
+		case "Latest":
+			policy = sysio.Latest
+		default:
+			policy = sysio.Latest
+	}
+
+	mqttClient, err := sysio.NewMQTTClient(
+							id,
+							broker,
+							client,
+							username,
+							password,
+							policy,
+							size,
+						)
+
+	h := &mqttPublisherHandle {
 		emptyHandle:	emptyHandle{baseNode: baseNode{line: conf.line}},
 		mqttClient: 	mqttClient,
 		topic:			topic,
 		qos:			byte(qos),
+		retained:		retained,
 	}
 
-	return h, util.JoinSep(";", err1, err2)
+	return h, err
 }
-
 
 /******** io/open executor ********/
 
@@ -306,6 +447,41 @@ func (timeExecutor) execute(_ *recordExpr, _ typedef) (expression, error) {
 	return newStringExpr(tString, 0), nil
 }
 
+/******** compile executor ********/
+
+type compileExecutor struct {}
+
+func (compileExecutor) execute(conf *recordExpr, _ typedef) (expression, error) {
+	file, ok := conf.readString("program")
+	if !ok {
+		return nil, errors.New("runtime/compile: missing program")
+	}
+
+	p := NewProgram(file)
+	log := p.Parse()
+
+ 	if log.HasErrors() {
+        return nil, util.JoinSep("\n", errors.New("runtime/compile:"), log.Errors())
+    }
+
+    cfg := util.ParseFlags(nil, nil)
+
+    elog, rlog := p.Validate(cfg)
+    if elog.HasErrors() {
+        return nil, util.JoinSep("\n", errors.New("runtime/compile:"), elog.Errors())
+    }
+
+    if rlog.HasReports() {
+        rlog.PrintReports()
+    }
+
+	h := 	&programHandle {
+				emptyHandle: emptyHandle{baseNode: baseNode{line: conf.line}},
+				prog: p,
+			}
+	return h, nil
+}
+
 /**********************************************************************************
  * Handles
  **********************************************************************************/
@@ -334,7 +510,7 @@ func (re *recordExpr) output(v expression) error {
 		err2 = fmt.Errorf("no action definition in io configuration")
 	}
 
-	if !(ok1 && ok2) {
+	if !ok1 || !ok2 {
 		return util.JoinSep("; ", err1, err2)
 	}
 
@@ -452,9 +628,14 @@ func (h *fileHandle) input(tdef typedef) (expression, error) {
 	}
 	text := strings.TrimRight(line, "\r\n")
 
-	return unmarshal(tdef, text)
+	switch st := tdef.(type) {
+		case *stringType:
+			return newStringExpr(text, st.line), nil
+		default:
+			err := fmt.Errorf("expecting string type; found %q instead.", tdef.String())
+			return tdef.defaultValue(), err
+	}
 }
-
 
 func (h *fileHandle) close() error {
 	return h.f.Close()
@@ -530,37 +711,31 @@ func (h *memoryHandle) String() string {
 }
 
 /**********************************************************************************
- * sleep handle
+ * mqtt handle
  **********************************************************************************/
 
-type mqttHandle struct {
+type mqttPublisherHandle struct {
 	emptyHandle
-	mqttClient *sysio.MQTTClient
-	topic string
-	qos byte
+	mqttClient 		*sysio.MQTTClient
+	topic			string
+	qos				byte
+	retained		bool
 }
 
-func (h *mqttHandle) output(value expression) error {
+func (h *mqttPublisherHandle) output(value expression) error {
 	escaped := unQuote(value.String())
 	b := []byte(escaped)
-	return h.mqttClient.Publish(h.topic, h.qos, true, b)
+	return h.mqttClient.Publish(h.topic, h.qos, h.retained, b)
 }
 
-func (h *mqttHandle) input(tdef typedef) (expression, error) {
-	if h.mqttClient == nil {
-		return tdef.defaultValue(), fmt.Errorf("mqtt client not connected")
-	}
-	msg, ok := h.mqttClient.Receive(h.topic)
-	if !ok {
-		return tdef.defaultValue(), fmt.Errorf("did not receive msg from topic: %q", h.topic)
-	}
-	return unmarshal(tdef, string(msg.Payload))
+func (h *mqttPublisherHandle) input(tdef typedef) (expression, error) {
+	return tdef.defaultValue(), fmt.Errorf("invalid input operation for mqtt publish")
 }
 
-func (h *mqttHandle) evaluate(_ *evaluationContext) expression { return h }
-func (h *mqttHandle) prettyPrint(iw util.IndentedWriter) { iw.Print(h.String()) }
-func (h *mqttHandle) String() string {
-	return "io mqttHandle { topic: " + h.topic + ", " + "qos: " + string(h.qos) + " }"
+func (h *mqttPublisherHandle) evaluate(_ *evaluationContext) expression { return h }
+func (h *mqttPublisherHandle) prettyPrint(iw util.IndentedWriter) { iw.Print(h.String()) }
+func (h *mqttPublisherHandle) String() string {
+	return fmt.Sprintf("io mqttPublisherHandle { publish: %v, qos: %v, retained: %v }", h.topic, h.qos, h.retained)
 }
 
 /**********************************************************************************
@@ -621,6 +796,9 @@ func (h *sleepHandle) String() string {
 
 var sHandle *sleepHandle = &sleepHandle{}
 
+/**********************************************************************************
+ * random Generator handle
+ **********************************************************************************/
 
 type randomGeneratorHandle struct {
 	emptyHandle
@@ -648,20 +826,62 @@ func (h *randomGeneratorHandle) String() string {
 	return fmt.Sprintf("io randomGeneratorHandle { multiplier: %d; increment: %d; modulo: %d; seed: %d}", h.multiplier, h.increment, h.modulo, h.seed)
 }
 
+/**********************************************************************************
+ * program handle
+ **********************************************************************************/
+
+type programHandle struct {
+	emptyHandle
+	prog *program
+}
+
+func (h *programHandle) output(_ expression) error {
+	h.prog.Execute()
+	return nil
+}
+
+func (_ *programHandle) input(tdef typedef) (expression, error) {
+	return tdef.defaultValue(), fmt.Errorf("invalid input operation for program")
+}
+
+func (h *programHandle) evaluate(_ *evaluationContext) expression { return h }
+func (h *programHandle) prettyPrint(iw util.IndentedWriter) { iw.Print(h.String()) }
+func (h *programHandle) String() string {
+	return "io program { program: " + h.String() + " }"
+}
+
+/**********************************************************************************
+ * api handle
+ **********************************************************************************/
+
+type apiHandle struct {
+	emptyHandle
+	api api.API
+	request string
+	response string
+}
+
+func (_ *apiHandle) output(_ expression) error {
+	return fmt.Errorf("cannot use api as output")
+}
+
+func (h *apiHandle) input(tdef typedef) (expression, error) {
+	request := unQuote(h.request)
+	h.response = h.api.Request(request)
+	escaped := unQuote(h.response)
+	return unmarshal(tdef, escaped)
+	//return newStringExpr(h.response, h.line), nil
+}
+
+func (h *apiHandle) evaluate(_ *evaluationContext) expression { return h }
+func (h *apiHandle) prettyPrint(iw util.IndentedWriter) { iw.Print(h.String()) }
+func (h *apiHandle) String() string {
+	return fmt.Sprintf("io apiHandle { api: %v; request: %v; response: %v }", h.api.String(), h.request, h.response)
+}
+
 /******************************************************************************
  *  Implement actions for record expression as io configuration
  ******************************************************************************/
-
-// func (r *recordExpr) readRecord(label string) (*recordExpr, bool) {
-//     expr, ok := r.exprMap[label]
-//     if ok {
-//         rExpr, ok := expr.(*recordExpr)
-//         if ok {
-//             return rExpr, true
-//         }
-//     }
-//     return nil, false
-// }
 
  func (r *recordExpr) readString(label string) (string, bool) {
     expr, ok := r.exprMap[label]
@@ -685,6 +905,21 @@ func (r *recordExpr) readInt(label string) (int, bool) {
     return 0, false
 }
 
+func (r *recordExpr) readBool(label string) (bool, bool) {
+    expr, ok := r.exprMap[label]
+    if ok {
+    	switch expr.(type) {
+    		case *trueExpr:
+    			return true, true
+    		case *falseExpr:
+    			return false, true
+    		default:
+    			return false, false
+    	}
+    }
+    return false, false
+}
+
 /******************************************************************************
  *  Registry for records 
  ******************************************************************************/
@@ -702,7 +937,6 @@ type recordRegistry struct {
 var (
 	registry = recordRegistry{ entries: make(map[string]*recordEntry) }
 )
-
 
 func findRecord(registryID string) (*recordExpr, error) {
 	entry, ok := registry.entries[registryID]

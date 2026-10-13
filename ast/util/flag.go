@@ -35,40 +35,40 @@ func ParseFlags(defs []FlagDef, args []string) *Config {
         names := append([]string{d.Name}, d.Aliases...) // primary + aliases
 
         switch v := d.Default.(type) {
-        case bool:
-            p := new(bool)
-            *p = v
-            for i, name := range names {
-                desc := d.Description
-                if i > 0 {
-                    desc += fmt.Sprintf(" (alias of -%s)", d.Name)
+            case bool:
+                p := new(bool)
+                *p = v
+                for i, name := range names {
+                    desc := d.Description
+                    if i > 0 {
+                        desc += fmt.Sprintf(" (alias of -%s)", d.Name)
+                    }
+                    fs.BoolVar(p, name, v, desc)
+                    cfg.boolPtr[name] = p
                 }
-                fs.BoolVar(p, name, v, desc)
-                cfg.boolPtr[name] = p
-            }
 
-        case string:
-            p := new(string)
-            *p = v
-            for i, name := range names {
-                desc := d.Description
-                if i > 0 { desc += fmt.Sprintf(" (alias of -%s)", d.Name) }
-                fs.StringVar(p, name, v, desc)
-                cfg.strPtr[name] = p
-            }
+            case string:
+                p := new(string)
+                *p = v
+                for i, name := range names {
+                    desc := d.Description
+                    if i > 0 { desc += fmt.Sprintf(" (alias of -%s)", d.Name) }
+                    fs.StringVar(p, name, v, desc)
+                    cfg.strPtr[name] = p
+                }
 
-        case int:
-            p := new(int)
-            *p = v
-            for i, name := range names {
-                desc := d.Description
-                if i > 0 { desc += fmt.Sprintf(" (alias of -%s)", d.Name) }
-                fs.IntVar(p, name, v, desc)
-                cfg.intPtr[name] = p
-            }
+            case int:
+                p := new(int)
+                *p = v
+                for i, name := range names {
+                    desc := d.Description
+                    if i > 0 { desc += fmt.Sprintf(" (alias of -%s)", d.Name) }
+                    fs.IntVar(p, name, v, desc)
+                    cfg.intPtr[name] = p
+                }
 
-        default:
-            panic(fmt.Errorf("unsupported flag type for %q", d.Name))
+            default:
+                panic(fmt.Errorf("unsupported flag type for %q", d.Name))
         }
     }
 

@@ -13,6 +13,8 @@ import (
 	"math"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+
+	"sessions/ast/util"
 )
 
 /* *********************************************************************************************************
@@ -33,33 +35,35 @@ type Message struct {
 
 /******** Inbox (per-topic buffer) ********/
 
-type overflowPolicy int
+type OverflowPolicy int
 
 const (
-	Block overflowPolicy = iota // block producer when full
+	Block OverflowPolicy = iota // block producer when full
 	DropNewest                  // drop incoming when full
 	DropOldest                  // evict one oldest, then enqueue
+	Latest						// always read the latest available message
 )
 
 type inbox struct {
 	ch      chan *Message
-	policy  overflowPolicy
+	latest	*Message
+	policy  OverflowPolicy
 	dropped atomic.Uint64
 	closed  atomic.Bool
 }
 
-func newInbox(size int, policy overflowPolicy) *inbox {
+func newInbox(size int, policy OverflowPolicy) *inbox {
 	if size < 0 {
 		size = 10
 	}
-	return &inbox{ch: make(chan *Message, size), policy: policy}
+	return &inbox{ch: make(chan *Message, size), latest: &Message{}, policy: policy}
 }
 
 func (ib *inbox) handler(_ mqtt.Client, m mqtt.Message) {
 	if ib.closed.Load() {
 		return
 	}
-	msg := &Message {
+	ib.latest = &Message {
 		Topic:    m.Topic(),
 		Payload:  append([]byte(nil), m.Payload()...), // copy
 		QoS:      m.Qos(),
@@ -68,23 +72,23 @@ func (ib *inbox) handler(_ mqtt.Client, m mqtt.Message) {
 	}
 	switch ib.policy {
 		case Block:
-			ib.ch <- msg
+			ib.ch <- ib.latest
 		case DropNewest:
 			select {
-				case ib.ch <- msg:
+				case ib.ch <- ib.latest:
 				default:
 					ib.dropped.Add(1)
 			}
 		case DropOldest:
 			select {
-				case ib.ch <- msg:
+				case ib.ch <- ib.latest:
 				default:
 					select {
 						case <-ib.ch:
 						default:
 					}
 					select {
-						case ib.ch <- msg:
+						case ib.ch <- ib.latest:
 						default:
 							ib.dropped.Add(1)
 					}
@@ -92,27 +96,43 @@ func (ib *inbox) handler(_ mqtt.Client, m mqtt.Message) {
 	}
 }
 
-func (ib *inbox) receive() (*Message, bool) {
-	m, ok := <-ib.ch
-	return m, ok
-}
-
-func (ib *inbox) receiveCtx(ctx context.Context) (*Message, bool) {
-	select {
-		case <-ctx.Done():
-			return &Message{}, false
-		case m, ok := <-ib.ch:
-			return m, ok
+func (ib *inbox) receive() (*Message, error) {
+	if ib.policy != Latest {
+		m, ok := <-ib.ch
+		if !ok {
+			return m, fmt.Errorf("closed topic")
+		}
+		return m, nil
 	}
+	return ib.latest, nil
 }
 
-func (ib *inbox) tryReceive() (*Message, bool) {
+func (ib *inbox) receiveCtx(ctx context.Context) (*Message, error) {
+	if ib.policy != Latest {
+		select {
+			case <-ctx.Done():
+				return &Message{}, fmt.Errorf("closed context")
+			case m, ok := <-ib.ch:
+				if !ok {
+				return m, fmt.Errorf("closed topic")
+			}
+			return m, nil
+		}
+	}
+	return ib.latest, nil
+}
+
+func (ib *inbox) tryReceive() (*Message, error) {
 	select {
 		case m, ok := <-ib.ch:
-			return m, ok;
+			if !ok {
+				return m, fmt.Errorf("closed topic")
+			}
+			return m, nil
 		default:
-			return &Message{}, false
+			return &Message{}, nil
 	}
+	return ib.latest, nil
 }
 
 func (ib *inbox) close() {
@@ -127,13 +147,13 @@ type topicInboxes struct {
 	mu         	sync.RWMutex
 	boxes      	map[string]*inbox
 	size       	int
-	policy     	overflowPolicy
+	policy     	OverflowPolicy
 	autoCreate 	bool
 	// optional: a fallback inbox when autoCreate=false and topic not found
 	fallback 	*inbox
 }
 
-func newTopicInboxes(size int, policy overflowPolicy, autoCreate bool) *topicInboxes {
+func newTopicInboxes(size int, policy OverflowPolicy, autoCreate bool) *topicInboxes {
 	return &topicInboxes {
 		boxes:      make(map[string]*inbox),
 		size:       size,
@@ -209,41 +229,38 @@ func (t *topicInboxes) CloseAll() {
 	}
 }
 
-
-func (t *topicInboxes) receive(topic string) (*Message, bool) {
+func (t *topicInboxes) receive(topic string) (*Message, error) {
 	if ib, ok := t.inboxFor(topic); ok && ib != nil {
 		return ib.receive()
 	}
-	return &Message{}, false
+    return &Message{}, fmt.Errorf("receive: subscribe topic not found: %q", topic)
 }
-
 
 /* *********************************************************************************************************
  * mqtt configuration and client creation
  * *********************************************************************************************************/
 
 type mqttConfig struct {
-	brokers        []string
-	clientID       string
-	username       string
-	password       string
-	tlsConfig      *tls.Config
-	keepAlive      time.Duration // default 60s
-	cleanSession   bool          // default true
-	autoReconnect  bool          // default true
-	connectRetry   bool          // default true
-	actionTimeout  time.Duration // default 5s
-	onMessage      mqtt.MessageHandler
-	onConnect      mqtt.OnConnectHandler
-	onLost         mqtt.ConnectionLostHandler
+	broker 			string
+	clientID 		string
+	username 		string
+	password 		string
+	tlsConfig 		*tls.Config
+	keepAlive 		time.Duration // default 60s
+	cleanSession 	bool          // default true
+	autoReconnect 	bool          // default true
+	connectRetry 	bool          // default true
+	actionTimeout 	time.Duration // default 5s
+	onMessage 		mqtt.MessageHandler
+	onConnect 		mqtt.OnConnectHandler
+	onLost 			mqtt.ConnectionLostHandler
 
-	subscriptions []struct {
-		topic string
-		qos   byte
-	}
+	subscriptions	map[string]byte
+	log 			error
 }
 
-func mqttOptions(brokers []string, clientID, username, password string, keepAlive, actionTimeout float64, inboxes *topicInboxes) *mqttConfig {
+func mqttOptions(	broker string, clientID, username, password string, keepAlive, actionTimeout float64,
+					/*subscribeTopics []string, qos byte, */handler mqtt.MessageHandler) *mqttConfig {
 	if clientID == "" {
 		clientID = fmt.Sprintf("clientID-%v", time.Now().Nanosecond())
 	}
@@ -263,7 +280,7 @@ func mqttOptions(brokers []string, clientID, username, password string, keepAliv
 	}
 
 	return &mqttConfig {
-		brokers:		brokers,
+		broker:			broker,
 		clientID: 		clientID,
 		username: 		username,
 		password: 		password,
@@ -272,35 +289,28 @@ func mqttOptions(brokers []string, clientID, username, password string, keepAliv
 		autoReconnect:	true,
 		connectRetry:	true,
 		actionTimeout:	actionTimeoutDuration,
-		onMessage:		inboxes.handler(),
-		// subscriptions:	subscriptions,
+		onMessage:		handler,
+		subscriptions:	make(map[string]byte),
 	}
 }
 
-func (c *mqttConfig) subscribe(topic string, qos byte) {
-	c.subscriptions = append(
-							c.subscriptions,
-							struct{
-								topic string
-								qos byte
-							}{
-								topic: topic,
-								qos: qos,
-							},
-						)
+func (c *mqttConfig) subscribe(topic string, qos byte) bool {
+	_, ok := c.subscriptions[topic]
+	if !ok {
+		c.subscriptions[topic] = qos
+		return true
+	}
+	return false
 }
 
 func (cfg *mqttConfig) newClient() (mqtt.Client, error) {
-	if len(cfg.brokers) == 0 {
-		cfg.brokers = []string{"tcp://localhost:1883"}
+	if cfg.broker == "" {
+		cfg.broker = "tcp://localhost:1883"
 	}
 	opts := mqtt.NewClientOptions()
-	for _, b := range cfg.brokers {
-		opts.AddBroker(b)
-	}
-	if cfg.clientID != "" {
-		opts.SetClientID(cfg.clientID)
-	}
+	opts.AddBroker(cfg.broker)
+
+	opts.SetClientID(cfg.clientID)
 	if cfg.username != "" {
 		opts.SetUsername(cfg.username)
 		opts.SetPassword(cfg.password)
@@ -313,69 +323,91 @@ func (cfg *mqttConfig) newClient() (mqtt.Client, error) {
 	opts.SetAutoReconnect(cfg.autoReconnect)
 	opts.SetConnectRetry(cfg.connectRetry)
 	if cfg.onMessage != nil { opts.SetDefaultPublishHandler(cfg.onMessage) }
-	if cfg.onLost != nil { opts.SetConnectionLostHandler(cfg.onLost) }
+	if cfg.onLost != nil 	{ opts.SetConnectionLostHandler(cfg.onLost) }
 
-	// Re/subscribe on (re)connect
-	opts.SetOnConnectHandler(
-		func(c mqtt.Client) {
-			if cfg.onConnect != nil {
-				cfg.onConnect(c)
-			}
-			for _, s := range cfg.subscriptions {
-				if s.topic == "" { continue }
-				tok := c.Subscribe(s.topic, s.qos, cfg.onMessage)
-			    tok.WaitTimeout(cfg.actionTimeout)
-				// tok.Wait()
-
-				_ = tok.Error() // optionally log
-			}
-		},
+	 opts.SetOnConnectHandler(
+					func(c mqtt.Client) {
+						cfg.log = nil
+						for subscription, qos := range cfg.subscriptions {
+							if subscription != "" {
+								tok := c.Subscribe(subscription, qos, cfg.onMessage)
+								tok.Wait()
+								if err := tok.Error(); err != nil {
+									cfg.log = util.JoinSep(";", cfg.log, err)
+								}
+							}
+						}
+					},
 	)
-
+	
 	c := mqtt.NewClient(opts)
 	tok := c.Connect()
-	if !tok.WaitTimeout(cfg.actionTimeout) {
-		c.Disconnect(0)
-		//return nil, fmt.Errorf("mqtt connect to %q: timeout after %v", cfg.brokers, cfg.actionTimeout)
-	}
+	tok.Wait()
 	if err := tok.Error(); err != nil {
 		c.Disconnect(0)
 		return nil, err
 	}
+	if cfg.log != nil {
+		return nil, cfg.log
+	}
 	return c, nil
 }
-
 
 /* ********************************************************************************************************************************
  * An mqtt client wrapper
  * ********************************************************************************************************************************/
 
+var (
+	mqttClientRegistry = make(map[string]*MQTTClient)
+	mu         	sync.RWMutex
+)
+
 type MQTTClient struct {
-	client		mqtt.Client
-	inboxes 	*topicInboxes
-	config		*mqttConfig
+	client			mqtt.Client
+	inboxes  		*topicInboxes
+	config			*mqttConfig
 }
 
-func NewMQTTClient(brokers []string, clientID, username, password string, size int) (*MQTTClient, error) {
+func NewMQTTClient(id string, broker string, clientID, username, password string, policy OverflowPolicy, size int) (*MQTTClient, error) {
+	mu.Lock()
+	defer mu.Unlock()
+	client, ok := mqttClientRegistry[id]
+	if !ok {
+		var err error
+		client, err = newMQTTClient(broker, clientID, username, password, policy, size)
+		if err != nil {
+			return nil, err
+		}
+		mqttClientRegistry[id] = client
+	}
+	return client, nil
+}
+
+func newMQTTClient(broker string, clientID, username, password string, policy OverflowPolicy, size int) (*MQTTClient, error) {
 	if size <= 0 {
 		size = 10
 	}
-	inboxes := newTopicInboxes(size, DropOldest, true)
-	config  := mqttOptions(brokers, clientID, username, password, 0, 0, inboxes)
+
+	inboxes := newTopicInboxes(size, policy, true) //TODO: how to treat autoCreate
+
+    config  := mqttOptions(	broker, clientID, username, password, 0, 0, inboxes.handler() )
+
 	client, err := config.newClient()
 	if err != nil {
 		return nil, err
 	}
 
 	return &MQTTClient {
-		client: client,
-		inboxes: inboxes,
-		config: config,
+		client:			client,
+		inboxes: 		inboxes,
+		config:			config,
 	}, nil
 }
 
 func (c *MQTTClient) Subscribe(topic string, qos byte) error {
-    if topic == "" {
+	mu.Lock()
+	defer mu.Unlock()
+	if topic == "" {
         return fmt.Errorf("subscribe: empty topic")
     }
     if qos < 0 || qos > 2 {
@@ -383,27 +415,26 @@ func (c *MQTTClient) Subscribe(topic string, qos byte) error {
     }
 
     // Save for re-subscribe on reconnect
-    c.config.subscribe(topic, qos)
-
-    tok := c.client.Subscribe(topic, qos, c.config.onMessage)
-    if !tok.WaitTimeout(c.config.actionTimeout) {
-        return fmt.Errorf("subscribe %q: timeout after %v", topic, c.config.actionTimeout)
-    }
-    // tok.Wait()
-    return tok.Error()
+    if c.config.subscribe(topic, qos) {
+	    tok := c.client.Subscribe(topic, qos, c.config.onMessage)
+	    tok.Wait()
+	    return tok.Error()
+	}
+	return nil
 }
 
-func (c *MQTTClient) Publish(topic string, qos byte, retain bool, payload []byte) error {
+func (c *MQTTClient) Publish(topic string, qos byte, retained bool, payload []byte) error {
 	if topic == "" {
-		return fmt.Errorf("empty topic")
+		return fmt.Errorf("empty publish topic")
 	}
-	tok := c.client.Publish(topic, qos, retain, payload)
-	if !tok.WaitTimeout(c.config.actionTimeout) {
-		return fmt.Errorf("publish on topic %q: timeout after %v", topic, c.config.actionTimeout)
-	}
+	tok := c.client.Publish(topic, qos, retained, payload)
+	tok.Wait()
 	return tok.Error()
 }
 
-func (c *MQTTClient) Receive(topic string) (*Message, bool) {
+func (c *MQTTClient) Receive(topic string) (*Message, error) {
 	return c.inboxes.receive(topic)
 }
+
+
+

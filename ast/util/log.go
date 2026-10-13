@@ -10,6 +10,7 @@ type ErrorLog interface {
     HasErrors() bool
     Iterator() func() (error, bool)
     PrintErrors()
+    Errors() error
 }
 
 /*******************************************************************************
@@ -48,6 +49,10 @@ func (b *BasicErrorLog) PrintErrors() {
     for _, e := range b.log {
         fmt.Fprintln(os.Stderr, e.Error())
     }
+}
+
+func (b *BasicErrorLog) Errors() error {
+    return JoinSep("\n", b.log...)
 }
 
 /*******************************************************************************
@@ -147,7 +152,6 @@ func (b *basicError) Error() string {
     }
     return fmt.Sprintf("%s:%d: %s error.\n\t%s", b.file, b.line, b.errorType, b.err)
 }
-
 
 /*******************************************************************************
  * Custom Syntax Error

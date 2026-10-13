@@ -40,8 +40,9 @@ func (p *program) parseModule(moduleName string, log *customErrorListener) *modu
     if m, ok := p.moduleMap[moduleName]; ok {
         return m
     }
+
     filename := moduleName + p.suffix
-    m := parse(filename, log)
+    m := parseFile(filename, log)
     if m == nil {
         return nil
     }

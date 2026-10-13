@@ -14,7 +14,6 @@ import (
  ******************************************************************************/ 
 
 type valueI interface {
-	expression
 	marshaler
 }
 
@@ -170,6 +169,7 @@ func (bt *boolType) unmarshal(s string) (expression, string, error) {
 func (st *stringType) unmarshal(s string) (expression, string, error) {
 	s0 := s
     s = strings.TrimFunc(s, unicode.IsSpace)
+    //TODO: in the case of string, is this an error?
     if len(s) == 0 {
         return st.defaultValue(), s0, fmt.Errorf("empty input")
     }
@@ -203,7 +203,7 @@ func (lt *listType) unmarshal(s string) (expression, string, error) {
 			return lt.defaultValue(), s, fmt.Errorf("unterminated list")
 		}
 
-		um, ok := lt.tdef.(unmarshaler)
+		um, ok := lt.tdef.getType().(unmarshaler)
 		if !ok {
 			return lt.defaultValue(), s0, fmt.Errorf("unrecognisable at %q", preview(s))
 		} 
@@ -270,7 +270,7 @@ func (rt *recordType) unmarshal(s string) (expression, string, error) {
 			return rt.defaultValue(), s0, fmt.Errorf("unexpected label %q", key)
 		}
 
-		um, ok := fieldT.(unmarshaler)
+		um, ok := fieldT.getType().(unmarshaler)
 		if !ok {
 			return rt.defaultValue(), s0, fmt.Errorf("unrecognisable at %q", preview(s))
 		}
@@ -489,7 +489,7 @@ func (lt *listType) byteUnmarshal(s string) ([]byte, string, error) {
 	s = strings.TrimFunc(s[1:], unicode.IsSpace)
 
 	if len(s) > 0 && s[0] == ']' {
-		return /*newListExpr(nil, lt.line)*/make([]byte, 0), strings.TrimFunc(s[1:], unicode.IsSpace), nil
+		return make([]byte, 0), strings.TrimFunc(s[1:], unicode.IsSpace), nil
 	}
 
 	var bs []byte

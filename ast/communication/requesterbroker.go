@@ -57,6 +57,29 @@ func NewRequesterBroker[T any](
 	return b
 }
 
+type channelMap[T any] map[string](map[string] Channel[T])
+
+func (b *RequesterBroker[T]) createChannels() (channels channelMap[T]) { //newChannel func() communication.Channel[expression]) (channels channelMap) {
+    psize := len(b.acceptorsList) + 1
+
+    channels = make(channelMap[T], psize)
+    for _, p := range b.acceptorsList {
+        channels[p] = make(map[string]Channel[T], psize - 1)
+    }
+
+    channels[b.requester] = make(map[string]Channel[T], psize - 1)
+
+    for i, p1 := range b.acceptorsList {
+        for j, p2 := range b.acceptorsList {
+            if i == j { continue }
+            channels[p1][p2] = NewBasicChannel[T](true)
+        }
+        channels[p1][b.requester] = NewBasicChannel[T](true)
+        channels[b.requester][p1] = NewBasicChannel[T](true)
+    }
+    return channels
+}
+
 func (b *RequesterBroker[T]) Copy() *RequesterBroker[T] {
 	return NewRequesterBroker[T](b.requester, b.acceptorsList, b.newChannels)
 }
@@ -108,7 +131,7 @@ func (b *RequesterBroker[T]) Request(requester string) (map[string]map[string]Ch
 	b.round++
 	b.open = true
 	b.joined = make(map[string]struct{}, len(b.acceptors))
-	b.channels = b.newChannels()
+	b.channels = b.newChannels() // b.createChannels
 
 	b.cond.Broadcast()
 	return b.channels, true, true

@@ -2524,7 +2524,7 @@ func (ra *accessExpr) expressionCheck(ctx *expressionCheckContext, log util.Erro
         return nil
     }
 
-    switch accType := tdef.(type) {
+    switch accType := tdef.getType().(type) {
         case *recordType:
             td, ok := accType.tdefMap[ra.name]
             if !ok {

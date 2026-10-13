@@ -1,4 +1,4 @@
-import esop27_submission_examples.water_network.simulator as sim
+import water_network.simulator as sim
 
 type configuration global s5 s7 estimator controller pump.
 	s5 -> estimator: sim.flowState.

@@ -236,7 +236,7 @@ sendMacro       :   LT logicalOr (COMMA logicalOr)* GT
 receiveMacro    :   LPAR variableDef (COMMA variableDef)* RPAR
                 ;
 
-primaryTerm     :   literal
+primaryTerm     :   sumop? literal
                 |   primaryList
                 |   primaryRecord
                 |   channel

@@ -8,7 +8,7 @@ import (
 /******************************************************************************
  * []*participantType
  ******************************************************************************/
-//TODO put the code for participantTypeList  somewhere else
+//TODO put the code for participantTypeList somewhere else
 type participantTypeList struct {
 	util.List[*participantType]
 }
@@ -202,10 +202,10 @@ func (rct *reqChannelType) typeCheck(ctx *typeCheckContext, log util.ErrorLog) {
     if rct.requester != nil {
         rct.requester.typeCheck(ctx, log)
     }
+
     rct.gconfig.typeCheck(ctx, log)
     
     gconfig := rct.gconfig.getType()
-
     if gconfig == nil { return }
     gc, ok := gconfig.(globalConfig)
     if !ok {

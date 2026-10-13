@@ -92,8 +92,12 @@ func (f *File) ReadString(delim byte) (string, error) {
 // ReadLine reads up to '\n'. If EOF arrives after some bytes, returns them.
 func (f *File) ReadLine() (string, error) {
     s, err := f.ReadString('\n')
-    if err == io.EOF && len(s) > 0 {
-        return s, nil
+    if err == io.EOF {
+    	if len(s) > 0 {
+        	return s, nil
+        } else {
+        	return string('\x00'), nil //[]byte{0}), nil
+        }
     }
     return s, err
 }

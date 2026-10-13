@@ -383,7 +383,7 @@ func (a *application) evaluate(pexpr *participantExpr, substitution map[string]s
 
     from := pexpr.id
     if substitution != nil {
-        from =substitution[pexpr.id]
+        from = substitution[pexpr.id]
     }
 
     for i, pexpr2 := range a.arguments {

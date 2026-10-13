@@ -401,7 +401,6 @@ func (rt *recordType) setFilename(filename string) {
 
 func (rt *recordType) subtypeOf(tdef typedef) bool { return rt.subtypeOf_(tdef, nil) }
 
-//TODO: add more operators to recordType
 func (rt *recordType) subtypeOf_(tdef typedef, _ util.Set[typePair]) bool {
     switch rtype := tdef.getType().(type) {
         case *nothingType:
@@ -635,7 +634,6 @@ func (pt *participantType) defaultValue() expression {
 
 func (pt *participantType) prettyPrint(iw util.IndentedWriter) { iw.Print(pt.String()) }
 func (pt *participantType) String() string { return pt.participant }
-
 
 /******************************************************************************
  * types and typeclasses

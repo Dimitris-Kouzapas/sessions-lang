@@ -31,7 +31,7 @@ func (ce *customErrorListener) SyntaxError(_ antlr.Recognizer, _ interface{}, li
  * Parser
  ******************************************************************************/
 
-func parse(file string, log *customErrorListener) *module {
+func parseFile(file string, log *customErrorListener) *module {
     input, err := antlr.NewFileStream(file)
 
     if err != nil {
@@ -39,6 +39,15 @@ func parse(file string, log *customErrorListener) *module {
         return nil
     }
 
+    return parse(input, log)
+}
+
+func parseString(source string, log *customErrorListener) *module {
+    input := antlr.NewInputStream(source)
+    return parse(input, log)
+}
+
+func parse(input antlr.CharStream, log *customErrorListener) *module {
     lexer := parser.NewsessionsLexer(input)
     lexer.RemoveErrorListeners()
     lexer.AddErrorListener(log)
@@ -48,10 +57,13 @@ func parse(file string, log *customErrorListener) *module {
     p := parser.NewsessionsParser(stream)
     p.RemoveErrorListeners()
     p.AddErrorListener(log)
+
     tree := p.Module()
 
     if log.HasErrors() {
         return nil
     }
+
     return new(sessionsVisitor).VisitModule(tree.(*parser.ModuleContext))
 }
+
