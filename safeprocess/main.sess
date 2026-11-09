@@ -1,0 +1,179 @@
+
+import safeprocess.configurator
+import safeprocess.proxies
+import safeprocess.fault_detector as fault
+import safeprocess.estimators
+
+val init_state as {
+	xhat: 0.0,
+	prediction_bound: 0.0,
+	bias_change_bound: 0.0,
+	nu_w: 0.0,
+	nu_b: 0.0,
+	previous_volume: 0.0,
+	initialized: false
+}
+
+
+deploy_fault_detector:
+		init i. i?configurator.configuration. i?io
+	|	local. end
+
+proc deploy_fault_detector(conf configurator.configuration, csv io).
+	let area1 as 3.1416 * (conf.tank1.diameter^2) / 4
+	let area2 as 3.1416 * (conf.tank2.diameter^2) / 4
+	let dt as conf.dt_s / 3600
+
+	conc with
+		role ls1 as proxies.levelSensor<conf.tanks[0]> fd
+		role ls2 as proxies.levelSensor<conf.tanks[1]> fd
+		role f2 as proxies.flowSensor<"2"> est1
+		role f5 as proxies.flowSensor<"5"> est1
+		role f13 as proxies.flowSensor<"13"> est1
+		role f7 as proxies.flowSensor<"7"> est1
+		role f9 as proxies.flowSensor<"9"> est2
+
+		role est1 as estimators.q1_inflow<dt> f2 f5 f13 f7 fd
+		role est2 as estimators.q2_inflow<dt> f9 fd
+		role fd as fault.detector<area1, area2, init_state, init_state, csv> ls1 ls2 est1 est2 sup
+
+		role sup as supervisor<conf, csv> fd
+
+	out <- "controller started\n"
+
+
+deploy_alternative_fault_detector:
+		init i. i?configurator.configuration. i?io
+	|	local. end
+
+proc deploy_alternative_fault_detector(conf configurator.configuration, csv io).
+	let area1 as 3.1416 * (conf.tank1.diameter^2) / 4
+	let area2 as 3.1416 * (conf.tank2.diameter^2) / 4
+	let dt as conf.dt_s / 3600
+
+	conc with
+		/* Deploy virtual sensor */
+		role ff7 as proxies.flowSensorClient<"additional", "7"> vp1
+		role p9 as proxies.pressureSensor<"9", 0> vp1
+		role vp1 as estimators.virtual_pressure<0.0003841387863, 1.0, 0.0, false> ff7 p9 fd
+
+		role ls2 as proxies.levelSensor<conf.tanks[1]> fd
+
+		role f2 as proxies.flowSensor<"2"> est1
+		role f5 as proxies.flowSensor<"5"> est1
+		role f13 as proxies.flowSensor<"13"> est1
+		role f7 as proxies.flowSensor<"7"> est1
+		role f9 as proxies.flowSensor<"9"> est2
+
+		role est1 as estimators.q1_inflow<dt> f2 f5 f13 f7 fd
+		role est2 as estimators.q2_inflow<dt> f9 fd
+		role fd as fault.detector<area1, area2, init_state, init_state, csv> vp1 ls2 est1 est2 sup
+
+		role sup as alternative_supervisor<conf> fd
+
+	out <- "controller started\n"
+
+
+deploy_alternative_fault_detector2:
+		init i. i?configurator.configuration. i?io
+	|	local. end
+
+proc deploy_alternative_fault_detector2(conf configurator.configuration, csv io).
+	let area1 as 3.1416 * (conf.tank1.diameter^2) / 4
+	let area2 as 3.1416 * (conf.tank2.diameter^2) / 4
+	let dt as conf.dt_s / 3600
+
+	conc with
+		role ls1 as proxies.levelSensor<conf.tanks[0]> fd
+		role ls2 as proxies.levelSensor<conf.tanks[1]> fd
+
+		role j1 as proxies.pressureSensor<"4", 0> len
+		role r1 as proxies.pressureSensor<"1", 0> len
+		role s1 as proxies.signalSensor<conf.pumps[0]> len
+		role len as estimators.pump_energy<160.0, 0.001234568> r1 j1 s1 est1
+
+		role f5 as proxies.flowSensor<"5"> est1
+		role f13 as proxies.flowSensor<"13"> est1
+		role f7 as proxies.flowSensor<"7"> est1
+		role f9 as proxies.flowSensor<"9"> est2
+
+		role est1 as estimators.q1_inflow<dt> len f5 f13 f7 fd
+		role est2 as estimators.q2_inflow<dt> f9 fd
+		role fd as fault.detector<area1, area2, init_state, init_state, csv> ls1 ls2 est1 est2 sup
+
+		role sup as alternative_supervisor<conf> fd
+
+	out <- "controller started\n"
+
+
+supervisor:
+		init i. i?configurator.configuration. i?io
+	|	local fd.
+			branch fd {
+				Normal: rec
+			} or {
+				Error:
+					select fd {
+						Continue: rec
+					} or {
+						Terminate: end
+					}
+			}
+
+proc supervisor(conf configurator.configuration, csv io) fd.
+	branch fd of
+		Normal:
+			rec supervisor<conf, csv> fd
+		Error:
+			fd <- Terminate
+			out <- "[supervisor] ###########################################\n"
+				<- "[supervisor] # FAULT DETECTED\n"
+				<- "[supervisor] # RECONFIGURING\n"
+				<- "[supervisor] ###########################################\n"
+
+			conc with
+				role d as deploy_alternative_fault_detector<conf, csv>
+
+
+alternative_supervisor:
+		init i. i?configurator.configuration
+	|	local fd.
+			branch fd {
+				Normal: rec
+			} or {
+				Error:
+					select fd {
+						Continue: rec
+					} or {
+						Terminate: end
+					}
+			}
+
+proc alternative_supervisor(conf configurator.configuration) fd.
+	branch fd of
+		Normal:
+			rec alternative_supervisor<conf> fd
+		Error:
+			fd <- Continue
+			rec alternative_supervisor<conf> fd
+
+
+main:
+	local. end
+
+proc main.
+	let csv_conf as {
+		service: "io"
+		action: "open"
+		path: "./safeprocess/scripts/results/data.csv"
+		perms: "create"
+	}
+
+	csv io <- inp[csv_conf]
+
+	out[csv] <- "timestep,eps_q1,threshold_q1,alarm_q1,eps_q2,threshold_q2,alarm_q2\n"
+
+	conf configurator.configuration = configurator.read_json()
+
+	conc with
+		role d as deploy_fault_detector<conf, csv>

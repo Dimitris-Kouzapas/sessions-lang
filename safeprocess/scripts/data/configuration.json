@@ -1,0 +1,23 @@
+{
+  "pumps": ["pump1", "pump2", "pump3", "booster"],
+  "demands": ["demand1", "demand2"],
+  "tanks": ["t1", "t2"],
+  "hours": 148,
+  "horizon": 12,
+  "dt_s": 900,
+  "seed": 42,
+  "tank1": {
+    "elevation": 100,
+    "init_level": 2.0,
+    "min_level": 0.5,
+    "max_level": 7.0,
+    "diameter": 25.0
+  },
+  "tank2": {
+    "elevation": 180,
+    "init_level": 2.0,
+    "min_level": 0.0,
+    "max_level": 7.0,
+    "diameter": 15.0
+  }
+}

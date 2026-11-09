@@ -1,0 +1,350 @@
+
+val address as "127.0.0.1:1883"
+val clientName as "go-controller"
+val qos as 1
+val size as 1000
+val policy as "Block"
+
+// Bounds from config.py in the Python simulator.
+
+val level_abs as 0.01
+val pressure_offset as 0.18
+val pressure_noise as 0.02
+val flow_meter_rel as 0.02
+val demand_meter_rel as 0.05
+
+// Absolute error bounds.
+//
+// w: fast, sample-to-sample error
+// c: constant additive offset
+// b: magnitude of a varying bias
+// delta: bound on its change between samples
+//
+// Hydraulic-model uncertainty is not included here.
+
+type uncertainty record {
+	w float
+	c float
+	b float
+	delta float
+}
+
+type raw_reading record {
+	timestep int
+	value float
+}
+
+type reading record {
+	timestep int
+	value float
+	error uncertainty
+}
+
+
+// ------------------------------------------------------------
+// MQTT input
+// ------------------------------------------------------------
+
+mqtt_read:
+		local u.
+			u?string.
+			u?string.
+			u!raw_reading
+
+proc mqtt_read u.
+	client string <- u
+	topic string  <- u
+
+	let mqtt as {
+		service: 	"io",
+		action: 	"mqtt",
+		address:	address,
+		client:		client,
+		qos: 		qos,
+		size: 		size,
+		topic: 		topic,
+		policy: 	policy,
+	}
+
+	s string <- inp[mqtt]
+
+	raw raw_reading <- inp[
+		{service: "json", action: "unmarshal", value: s}
+	]
+
+	u <- raw
+
+
+// ------------------------------------------------------------
+// Tank level sensor
+//
+// Python model:
+//   measured_level = true_level + fast_noise
+//   |fast_noise| <= level_abs
+//
+// The reading is a level in metres.
+// ------------------------------------------------------------
+
+levelSensor:
+		init i. i?string
+	|	local c.
+			c!reading.
+			branch c {
+				Normal: rec
+			} or {
+				Error: end
+			}
+
+proc levelSensor(componentID string) c.
+	raw raw_reading =
+		mqtt_read(clientName, "sim/node/" + componentID)
+
+	c <- {
+		timestep: raw.timestep,
+		value: raw.value,
+		error: {
+			w: level_abs,
+			c: 0.0,
+			b: 0.0,
+			delta: 0.0
+		}
+	}
+
+	branch c of
+		Normal:
+			rec levelSensor<componentID> c
+		Error:
+			term
+
+
+/* ******************************************************
+ * ******************************************************
+ * ******************************************************/
+
+
+// ------------------------------------------------------------
+// Pressure / hydraulic-head sensor
+//
+// Python model:
+//   measured_head = true_head + offset + fast_noise
+//
+//   |offset|     <= pressure_offset
+//   |fast_noise| <= pressure_noise
+//
+// The fixed offset is preserved as c. It is NOT
+// treated as fresh noise at each observation.
+//
+// elevation converts EPANET pressure head to
+// hydraulic head when the simulator publishes
+// pressure head in metres.
+// ------------------------------------------------------------
+
+pressureSensor:
+		init i. i?string. i?float
+	|	local c.
+			c!reading.
+			branch c {
+				Normal: rec
+			} or {
+				Error: end
+			}
+
+proc pressureSensor(componentID string, elevation float) c.
+	raw raw_reading =
+		mqtt_read(clientName, "sim/node/" + componentID)
+
+	c <- {
+		timestep: raw.timestep,
+		value: raw.value + elevation,
+		error: {
+			w: pressure_noise,
+			c: pressure_offset,
+			b: 0.0,
+			delta: 0.0
+		}
+	}
+
+	branch c of
+		Normal:
+			rec pressureSensor<componentID, elevation> c
+		Error:
+			term
+
+
+// ------------------------------------------------------------
+// Flow sensor
+//
+// Python model:
+//   measured_flow = true_flow * (1 + gain)
+//
+// The gain is fixed for the entire simulation run:
+//   |gain| <= flow_meter_rel
+//
+// Therefore:
+//   |true_flow - measured_flow|
+//      <= |measured_flow| * f / (1-f)
+//
+// The error magnitude changes with the flow,
+// but it is caused by a persistent sensor gain,
+// not independent noise.
+//
+// The flow-based detector uses this bound when
+// computing its one-step input-error bound eta.
+// ------------------------------------------------------------
+
+flowSensor:
+		init i. i?string
+	|	local c.
+			c!reading.
+			branch c {
+				Normal: rec
+			} or {
+				Error: end
+			}
+
+proc flowSensor(componentID string) c.
+	raw raw_reading =
+		mqtt_read(clientName, "sim/link/" + componentID)
+
+	let magnitude float as
+		if raw.value < 0.0
+		then -raw.value
+		else raw.value
+
+	let gain_bound float as
+		magnitude * flow_meter_rel
+		/ (1.0 - flow_meter_rel)
+
+	c <- {
+		timestep: raw.timestep,
+		value: raw.value,
+		error: {
+			w: 0.0,
+			c: 0.0,
+			b: gain_bound,
+			delta: 0.0
+		}
+	}
+
+	branch c of
+		Normal:
+			rec flowSensor<componentID> c
+		Error:
+			term
+/* ******************************************************
+ * Flow Sensor with additional client
+ * ******************************************************/
+
+flowSensorClient:
+		init i. i?string. i?string
+	|	local c.
+			c!reading.
+			branch c {
+				Normal: rec
+			} or {
+				Error: end
+			}
+
+proc flowSensorClient(client string, componentID string) c.
+	raw raw_reading =
+		mqtt_read(client + "_" + clientName, "sim/link/" + componentID)
+
+	c <- {
+		timestep: raw.timestep,
+		value: raw.value,
+		error: {
+			w: level_abs,
+			c: 0.0,
+			b: 0.0,
+			delta: 0.0
+		}
+	}
+
+	branch c of
+		Normal:
+			rec flowSensorClient<client, componentID> c
+		Error:
+			term
+
+
+// ------------------------------------------------------------
+// Demand meter
+//
+// Python model:
+//   measured_demand = true_demand * (1 + error)
+//
+// Error changes independently between samples:
+//   |error| <= demand_meter_rel
+//
+// Its absolute error bound follows the same
+// algebra as the flow meter, but belongs to w.
+// ------------------------------------------------------------
+
+demandSensor:
+		init i. i?string
+	|	local c.
+			c!reading.
+			branch c {
+				Normal: rec
+			} or {
+				Error: end
+			}
+
+proc demandSensor(componentID string) c.
+	raw raw_reading =
+		mqtt_read(clientName, "sim/node/" + componentID + "/demand")
+
+	let magnitude float as
+		if raw.value < 0.0
+		then -raw.value
+		else raw.value
+
+	let demand_bound float as
+		magnitude * demand_meter_rel
+		/ (1.0 - demand_meter_rel)
+
+	c <- {
+		timestep: raw.timestep,
+		value: raw.value,
+		error: {
+			w: demand_bound,
+			c: 0.0,
+			b: 0.0,
+			delta: 0.0
+		}
+	}
+
+	branch c of
+		Normal:
+			rec demandSensor<componentID> c
+		Error:
+			term
+
+
+// ------------------------------------------------------------
+// Pump operating-status sensor
+//
+// State is taken directly from the simulator.
+// ------------------------------------------------------------
+
+signalSensor:
+		init i. i?string
+	|	local c.
+			c!bool.
+			branch c {
+				Normal: rec
+			} or {
+				Error: end
+			}
+
+proc signalSensor(componentID string) c.
+	raw raw_reading =
+		mqtt_read(clientName, "sim/pump/" + componentID)
+
+	c <- raw.value == 1
+
+	branch c of
+		Normal:
+			rec signalSensor<componentID> c
+		Error:
+			term

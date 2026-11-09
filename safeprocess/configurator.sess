@@ -1,0 +1,63 @@
+type configuration record {
+	pumps [string]
+	demands [string]
+	tanks [string]
+	hours int
+	horizon int
+	seed int
+	dt_s float
+	tank1 record {
+		elevation int
+		init_level float
+		min_level float
+		max_level float
+		diameter float
+	}
+	tank2 record {
+		elevation int
+		init_level float
+		min_level float
+		max_level float
+		diameter float
+	}
+}
+
+
+read_json:
+	local u.
+		u!configuration.
+		end
+
+proc read_json u.
+	let file_conf as {
+		service:	"io"
+		action:		"open"
+		path:			"./safeprocess/scripts/data/configuration.json"
+		perms:		"read"
+		readLine:	true
+	}
+
+	file io <- inp[file_conf]
+	s string = read_file(file)
+	c configuration <- inp[
+		{service: "json", action: "unmarshal", value: s}
+	]
+
+	u <- c
+
+
+read_file:
+	local u.
+		u?io.
+		u!string
+
+proc read_file u.
+	file io <- u
+	s string <- inp[file]
+
+	if s != "\x00"
+	then
+		ss string = read_file(file)
+		u <- s + ss
+	else
+		u <- ""

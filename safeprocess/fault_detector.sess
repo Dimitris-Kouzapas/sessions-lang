@@ -1,0 +1,314 @@
+import safeprocess.proxies
+import safeprocess.estimators
+
+
+val lambda as 0.9
+
+type network_state record {
+    tank1 proxies.reading
+    tank2 proxies.reading
+}
+
+// Persistent state of one fault-detection estimator.
+type fde_state record {
+    xhat float
+    prediction_bound float
+    bias_change_bound float
+    nu_w float
+    nu_b float
+    previous_volume float
+    initialized bool
+}
+
+// Result of one FDE calculation.
+type detection record {
+    timestep int
+    residual float
+    threshold float
+    predicted_level float
+    valid bool
+    next fde_state
+}
+
+
+// ============================================================
+// ONE FDE CALCULATION — NO RECURSION
+//
+// Receives:
+//   current tank-level measurement
+//   net-inflow estimate and its error bounds
+//   tank area
+//   previous FDE state
+//
+// Returns:
+//   residual, threshold, and updated FDE state
+// ============================================================
+
+fde:
+    local u.
+        u?proxies.reading.
+        u?estimators.inflow.
+        u?float.
+        u?fde_state.
+        u!detection
+
+proc fde u.
+    level proxies.reading <- u
+    input estimators.inflow <- u
+    area float <- u
+    state fde_state <- u
+
+    let y float as level.value * area
+
+    let w float as level.error.w * area
+    let b float as level.error.b * area
+    let delta float as level.error.delta * area
+
+    // xhat already predicts the current timestep.
+    let xhat float as
+        if state.initialized then state.xhat else y
+
+    let residual float as y - xhat
+
+    // The Python check() updates D before
+    // calculating the threshold.
+    let bias_change_bound float as
+        if state.initialized
+        then lambda * state.bias_change_bound + delta
+        else 0.0
+
+    let nu_w float as
+        if state.initialized then state.nu_w else w
+
+    let nu_b float as
+        if state.initialized then state.nu_b else b
+
+    let bias_bound float as b + nu_b
+
+    let changing_bias_bound float as
+        if bias_change_bound < bias_bound
+        then bias_change_bound
+        else bias_bound
+
+    // Threshold for the current timestep.
+    let threshold float as
+        state.prediction_bound
+        + w + nu_w + changing_bias_bound
+
+    // Now predict the NEXT timestep using current flow.
+    let next_xhat float as
+        lambda * (xhat - y)
+        + y
+        + input.g
+
+    let next_prediction_bound float as
+        lambda * state.prediction_bound
+        + input.eta
+        + input.coupling
+
+    let next_nu_w float as
+        lambda * nu_w
+        + (1.0 - lambda) * w
+
+    let next_nu_b float as
+        lambda * nu_b
+        + (1.0 - lambda) * b
+
+    u <- {
+        timestep: level.timestep,
+        residual: residual,
+        threshold: threshold,
+        predicted_level: xhat / area,
+        valid: state.initialized,
+        next: {
+            xhat: next_xhat,
+            prediction_bound: next_prediction_bound,
+            bias_change_bound: bias_change_bound,
+            nu_w: next_nu_w,
+            nu_b: next_nu_b,
+            previous_volume: y,
+            initialized: true
+        }
+    }
+
+
+// ============================================================
+// FAULT DETECTOR
+//
+// Calls fde() twice per iteration.
+//
+// The recursive detector carries the two FDE states.
+// ============================================================
+
+detector:
+        init i.
+            i?float.
+            i?float.
+            i?fde_state.
+            i?fde_state.
+            i?io
+    |   local tank1_sensor tank2_sensor
+            tank1_inflow tank2_inflow supervisor.
+
+            tank1_sensor?proxies.reading.
+            tank2_sensor?proxies.reading.
+            tank1_inflow?estimators.inflow.
+            tank2_inflow?estimators.inflow.
+
+            select supervisor {
+                Normal:
+                    select tank1_sensor {
+                        Normal:
+                            select tank2_sensor {
+                                Normal:
+                                    select tank1_inflow {
+                                        Normal:
+                                            select tank2_inflow {
+                                                Normal: rec
+                                            }
+                                    }
+                            }
+                    }
+            } or {
+                Error:
+                    branch supervisor {
+                        Continue:
+                            select tank1_sensor {
+                                Normal:
+                                    select tank2_sensor {
+                                        Normal:
+                                            select tank1_inflow {
+                                                Normal:
+                                                    select tank2_inflow {
+                                                        Normal: rec
+                                                    }
+                                            }
+                                    }
+                            }
+                    } or {
+                        Terminate:
+                            select tank1_sensor {
+                                Error:
+                                    select tank2_sensor {
+                                        Error:
+                                            select tank1_inflow {
+                                                Error:
+                                                    select tank2_inflow {
+                                                        Error: end
+                                                    }
+                                            }
+                                    }
+                            }
+                    }
+            }
+
+
+proc detector(
+    area1 float,
+    area2 float,
+    state1 fde_state,
+    state2 fde_state,
+    csv io
+) tank1_sensor tank2_sensor
+    tank1_inflow tank2_inflow supervisor. //controller.
+
+    let request as {
+        ack: true,
+    }
+
+    mrequest string <- inp[
+        {service: "json", action: "marshal", value: request}
+    ]
+
+    let mqttPub as {
+        service: "io",
+        action: "mqtt",
+        client: proxies.clientName,
+        address: proxies.address,
+        qos: proxies.qos,
+        topic: "sim/sync/request"
+    }
+
+    out[mqttPub] <- mrequest
+
+    level1 proxies.reading <- tank1_sensor
+    level2 proxies.reading <- tank2_sensor
+
+    inflow1 estimators.inflow <- tank1_inflow
+    inflow2 estimators.inflow <- tank2_inflow
+
+    result1 detection = fde(level1, inflow1, area1, state1)
+    result2 detection = fde(level2, inflow2, area2, state2)
+
+    let abs1 float as
+        if result1.residual < 0.0
+        then -result1.residual
+        else result1.residual
+
+    let abs2 float as
+        if result2.residual < 0.0
+        then -result2.residual
+        else result2.residual
+
+    let fault1 bool as
+        result1.valid && abs1 > result1.threshold
+
+    let fault2 bool as
+        result2.valid && abs2 > result2.threshold
+
+    let aligned bool as
+        level1.timestep == level2.timestep
+        && inflow1.timestep == level1.timestep
+        && inflow2.timestep == level2.timestep
+
+    out <- "[Fault Detector]" <- " | timestep: " <- level1.timestep
+        <- " | fault: " <- if not fault1 && not fault2 then "None" else "True" <- "\n"
+
+    out[csv] <- level1.timestep
+        <- "," <- result1.residual
+        <- "," <- result1.threshold
+        <- "," <- fault1
+        <- "," <- result2.residual
+        <- "," <- result2.threshold
+        <- "," <- fault2
+        <- "\n"
+
+    if aligned && not fault1 && not fault2
+    then
+        supervisor <- Normal
+        tank1_sensor <- Normal
+        tank2_sensor <- Normal
+        tank1_inflow <- Normal
+        tank2_inflow <- Normal
+
+        rec detector<
+            area1,
+            area2,
+            result1.next,
+            result2.next,
+            csv
+        > tank1_sensor tank2_sensor
+            tank1_inflow tank2_inflow supervisor
+    else
+        supervisor <- Error
+
+        branch supervisor of
+            Continue:
+                tank1_sensor <- Normal
+                tank2_sensor <- Normal
+                tank1_inflow <- Normal
+                tank2_inflow <- Normal
+
+                rec detector<
+                    area1,
+                    area2,
+                    result1.next,
+                    result2.next,
+                    csv
+                > tank1_sensor tank2_sensor
+                    tank1_inflow tank2_inflow supervisor
+            Terminate:
+                tank1_sensor <- Error
+                tank2_sensor <- Error
+                tank1_inflow <- Error
+                tank2_inflow <- Error

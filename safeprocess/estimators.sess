@@ -1,0 +1,583 @@
+import safeprocess.proxies
+
+val hw_exponent as 1.852
+val hw_roughness_rel as 0.10
+val flow_meter_rel as 0.02
+val pump_curve_rel as 0.03
+val level_noise_abs as 0.01
+
+// Signed inverse of the Hazen-Williams equation.
+//
+// deltaH = r * Q * |Q|^(hw_exponent-1)
+//
+// Pressure inputs must be hydraulic heads in metres.
+// r must be computed for Q in m3/h.
+
+pipe_energy:
+        init i. i?float
+    |   local p1 p2 c.
+            p1?proxies.reading.
+            p2?proxies.reading.
+            c!proxies.reading.
+            branch c {
+                Normal:
+                    select p1 {
+                        Normal:
+                            select p2 {
+                                Normal: rec
+                            }
+                    }
+            } or {
+                Error:
+                    select p1 {
+                        Error:
+                            select p2 {
+                                Error: end
+                            }
+                    }
+            }
+
+proc pipe_energy(r float) p1 p2 c.
+
+    pressure1 proxies.reading <- p1
+    pressure2 proxies.reading <- p2
+
+    // If pressureSensor already publishes hydraulic head,
+    // pass elevation1 = elevation2 = 0.
+
+    let head1 float as pressure1.value
+    let head2 float as pressure2.value
+
+    let deltaH float as head1 - head2
+
+    let magnitude float as
+        if deltaH < 0.0 then -deltaH else deltaH
+
+    let flow float as
+        if deltaH < 0.0
+        then -((magnitude / r)^(1.0 / hw_exponent))
+        else ((magnitude / r)^(1.0 / hw_exponent))
+
+    // Total absolute head-measurement uncertainty.
+    let error1 float as
+        pressure1.error.w
+        + pressure1.error.c
+        + pressure1.error.b
+
+    let error2 float as
+        pressure2.error.w
+        + pressure2.error.c
+        + pressure2.error.b
+
+    let head_error float as error1 + error2
+
+    let head_lo float as deltaH - head_error
+    let head_hi float as deltaH + head_error
+
+    // r varies inversely with C^hw_exponent.
+    let r_lo float as
+        r / ((1.0 + hw_roughness_rel)^hw_exponent)
+
+    let r_hi float as
+        r / ((1.0 - hw_roughness_rel)^hw_exponent)
+
+    // Smallest possible signed flow.
+    let r_for_lo float as
+        if head_lo < 0.0 then r_lo else r_hi
+
+    let magnitude_lo float as
+        if head_lo < 0.0 then -head_lo else head_lo
+
+    let flow_lo float as
+        if head_lo < 0.0
+        then -((magnitude_lo / r_for_lo)^(1.0 / hw_exponent))
+        else ((magnitude_lo / r_for_lo)^(1.0 / hw_exponent))
+
+    // Largest possible signed flow.
+    let r_for_hi float as
+        if head_hi > 0.0 then r_lo else r_hi
+
+    let magnitude_hi float as
+        if head_hi < 0.0 then -head_hi else head_hi
+
+    let flow_hi float as
+        if head_hi < 0.0
+        then -((magnitude_hi / r_for_hi)^(1.0 / hw_exponent))
+        else ((magnitude_hi / r_for_hi)^(1.0 / hw_exponent))
+
+    // Conservative absolute flow error.
+    let error_lo float as flow - flow_lo
+    let error_hi float as flow_hi - flow
+
+    let flow_bound float as
+        if error_lo > error_hi then error_lo else error_hi
+
+    c <- {
+        timestep: pressure1.timestep,
+        value: flow,
+        error: {
+            w: flow_bound,
+            c: 0.0,
+            b: 0.0,
+            delta: 0.0
+        }
+    }
+
+    branch c of
+        Normal:
+            p1 <- Normal
+            p2 <- Normal
+            rec pipe_energy<r> p1 p2 c
+
+        Error:
+            p1 <- Error
+            p2 <- Error
+
+
+pump_energy:
+        init i. i?float. i?float
+    |   local p1 p2 s c.
+            p1?proxies.reading.
+            p2?proxies.reading.
+            s?bool.
+            c!proxies.reading.
+            branch c {
+                Normal:
+                    select p1 {
+                        Normal:
+                            select p2 {
+                                Normal:
+                                    select s {
+                                        Normal: rec
+                                    }
+                            }
+                    }
+            } or {
+                Error:
+                    select p1 {
+                        Error:
+                            select p2 {
+                                Error:
+                                    select s {
+                                        Error: end
+                                    }
+                            }
+                    }
+            }
+
+proc pump_energy(h0 float, k float) p1 p2 s c.
+
+    pressure1 proxies.reading <- p1
+    pressure2 proxies.reading <- p2
+    enabled bool <- s
+
+    // Hydraulic heads.
+    let head1 float as pressure1.value
+    let head2 float as pressure2.value
+
+    let head_gain float as head2 - head1
+
+    // Nominal inverse pump curve:
+    // head_gain = h0 - k * Q^2
+
+    let x float as (h0 - head_gain) / k
+
+    let flow float as
+        if enabled
+        then
+            if x > 0.0 then x^(1.0 / 2) else 0.0
+        else
+            0.0
+
+    // Head measurement-error bound.
+    let error1 float as
+        pressure1.error.w
+        + pressure1.error.c
+        + pressure1.error.b
+
+    let error2 float as
+        pressure2.error.w
+        + pressure2.error.c
+        + pressure2.error.b
+
+    let head_error float as error1 + error2
+
+    let head_lo float as head_gain - head_error
+    let head_hi float as head_gain + head_error
+
+    // True curve = scale * (h0 - k * Q^2).
+    let scale_lo float as 1.0 - pump_curve_rel
+    let scale_hi float as 1.0 + pump_curve_rel
+
+    // For fixed head gain, monotonicity in the
+    // scale depends on the sign of the head gain.
+
+    let scale_for_min float as
+        if head_hi >= 0.0
+        then scale_lo
+        else scale_hi
+
+    let scale_for_max float as
+        if head_lo >= 0.0
+        then scale_hi
+        else scale_lo
+
+    let x_min float as
+        (h0 - head_hi / scale_for_min) / k
+
+    let x_max float as
+        (h0 - head_lo / scale_for_max) / k
+
+    let flow_min float as
+        if enabled
+        then
+            if x_min > 0.0
+            then x_min^(1.0 / 2)
+            else 0.0
+        else
+            0.0
+
+    let flow_max float as
+        if enabled
+        then
+            if x_max > 0.0
+            then x_max^(1.0 / 2)
+            else 0.0
+        else
+            0.0
+
+    let error_lo float as flow - flow_min
+    let error_hi float as flow_max - flow
+
+    let flow_bound float as
+        if error_lo > error_hi then error_lo else error_hi
+
+    c <- {
+        timestep: pressure1.timestep,
+        value: flow,
+        error: {
+            w: flow_bound,
+            c: 0.0,
+            b: 0.0,
+            delta: 0.0
+        }
+    }
+
+    branch c of
+        Normal:
+            p1 <- Normal
+            p2 <- Normal
+            s <- Normal
+            rec pump_energy<h0, k> p1 p2 s c
+
+        Error:
+            p1 <- Error
+            p2 <- Error
+            s <- Error
+
+
+virtual_pressure:
+        init i.
+            i?float. i?float. i?float. i?bool
+    |   local f p c.
+            f?proxies.reading.
+            p?proxies.reading.
+            c!proxies.reading.
+            branch c {
+                Normal:
+                    select f {
+                        Normal:
+                            select p {
+                                Normal: rec
+                            }
+                    }
+            } or {
+                Error:
+                    select f {
+                        Error:
+                            select p {
+                                Error: end
+                            }
+                    }
+            }
+
+proc virtual_pressure(
+    r float,
+    sign float,
+    previous_headloss float,
+    has_previous bool
+) f p c.
+
+    flow proxies.reading <- f
+    pressure proxies.reading <- p
+
+    let abs_flow as
+        if flow.value < 0.0
+        then -flow.value
+        else flow.value
+
+    // Reconstruct the hydraulic head at the opposite
+    // end of the pipe.
+    let headloss as
+        sign * r * flow.value
+        * (abs_flow^(hw_exponent - 1.0))
+
+    let estimated_head as
+        pressure.value + headloss
+
+    // Worst-case relative headloss uncertainty.
+    // Same calculation as diagnoser.py VirtualHead.
+
+    let rough_low as 1.0 - hw_roughness_rel
+    let rough_high as 1.0 + hw_roughness_rel
+    let flow_low as 1.0 - flow_meter_rel
+    let flow_high as 1.0 + flow_meter_rel
+
+    let e1 as
+        1.0 - 1.0 /
+        ((rough_low^hw_exponent)
+         * (flow_low^hw_exponent))
+
+    let e2 as
+        1.0 - 1.0 /
+        ((rough_low^hw_exponent)
+         * (flow_high^hw_exponent))
+
+    let e3 as
+        1.0 - 1.0 /
+        ((rough_high^hw_exponent)
+         * (flow_low^hw_exponent))
+
+    let e4 as
+        1.0 - 1.0 /
+        ((rough_high^hw_exponent)
+         * (flow_high^hw_exponent))
+
+    let a1 as if e1 < 0.0 then -e1 else e1
+    let a2 as if e2 < 0.0 then -e2 else e2
+    let a3 as if e3 < 0.0 then -e3 else e3
+    let a4 as if e4 < 0.0 then -e4 else e4
+
+    let m12 as if a1 > a2 then a1 else a2
+    let m34 as if a3 > a4 then a3 else a4
+    let rho as if m12 > m34 then m12 else m34
+
+    // Uncalibrated uncertainty from diagnoser.py.
+    //
+    // w: pressure measurement noise
+    // c: pressure sensor's constant offset
+    // b: uncertain pipe headloss
+    // delta: change in pipe headloss uncertainty
+
+    let noise_bound as pressure.error.w
+    let offset_bound as pressure.error.c
+
+    let abs_headloss as
+        if headloss < 0.0
+        then -headloss
+        else headloss
+
+    let bias_bound as rho * abs_headloss
+
+    let headloss_difference as
+        headloss - previous_headloss
+
+    let abs_headloss_difference as
+        if headloss_difference < 0.0
+        then -headloss_difference
+        else headloss_difference
+
+    let change_bound as
+        if has_previous
+        then rho * abs_headloss_difference
+        else 0.0
+
+    c <- {
+        timestep: flow.timestep,
+        value: estimated_head,
+        error: {
+            w: noise_bound,
+            c: offset_bound,
+            b: bias_bound,
+            delta: change_bound
+        }
+    }
+
+    branch c of
+        Normal:
+            f <- Normal
+            p <- Normal
+
+            rec virtual_pressure<
+                r,
+                sign,
+                headloss,
+                true
+            > f p c
+
+        Error:
+            f <- Error
+            p <- Error
+
+
+// ------------------------------------------------------------
+// Input to a fault-detection estimator.
+//
+// g:        predicted net inflow, m3/h
+// eta:      bound on the flow contribution to volume error, m3
+// coupling: bound on hydraulic state dependence, m3
+//
+// For Q predictors, coupling = 0.
+// For M predictors, these three fields must be computed
+// using the nominal hydraulic network and its uncertainty.
+// ------------------------------------------------------------
+
+type inflow record {
+    timestep   int
+    g           float
+    eta         float
+    coupling    float
+}
+
+
+// ------------------------------------------------------------
+// Q1: measured net inflow to tank 1.
+//
+// g = q2 + q5 - q13 - q7
+//
+// The measurement-error bound follows the Python method:
+// eta = dt * sum of absolute flow-error bounds.
+//
+// Each source supplies its own deterministic bound.
+// ------------------------------------------------------------
+
+q1_inflow:
+        init i. i?float
+    |   local f2 f5 f13 f7 c.
+            f2?proxies.reading.
+            f5?proxies.reading.
+            f13?proxies.reading.
+            f7?proxies.reading.
+            c!inflow.
+            branch c {
+                Normal:
+                    select f2 {
+                        Normal:
+                            select f5 {
+                                Normal:
+                                    select f13 {
+                                        Normal:
+                                            select f7 {
+                                                Normal: rec
+                                            }
+                                    }
+                            }
+                    }
+            } or {
+                Error:
+                    select f2 {
+                        Error:
+                            select f5 {
+                                Error:
+                                    select f13 {
+                                        Error:
+                                            select f7 {
+                                                Error: end
+                                            }
+                                    }
+                            }
+                    }
+            }
+
+proc q1_inflow(dt float) f2 f5 f13 f7 c.
+
+    flow2 proxies.reading <- f2
+    flow5 proxies.reading <- f5
+    flow13 proxies.reading <- f13
+    flow7 proxies.reading <- f7
+
+    let g float as
+        dt * (
+            flow2.value + flow5.value
+            - flow13.value - flow7.value
+        )
+
+    let bound2 float as
+        flow2.error.w + flow2.error.c + flow2.error.b
+
+    let bound5 float as
+        flow5.error.w + flow5.error.c + flow5.error.b
+
+    let bound13 float as
+        flow13.error.w + flow13.error.c + flow13.error.b
+
+    let bound7 float as
+        flow7.error.w + flow7.error.c + flow7.error.b
+
+    let eta float as
+        dt * (bound2 + bound5 + bound13 + bound7)
+
+    c <- {
+        timestep:   flow2.timestep,
+        g:          g,
+        eta:        eta,
+        coupling:   0.0
+    }
+
+    branch c of
+        Normal:
+            f2 <- Normal
+            f5 <- Normal
+            f13 <- Normal
+            f7 <- Normal
+            rec q1_inflow<dt> f2 f5 f13 f7 c
+        Error:
+            f2 <- Error
+            f5 <- Error
+            f13 <- Error
+            f7 <- Error
+
+
+// ------------------------------------------------------------
+// Q2: measured net inflow to tank 2.
+//
+// g = q9
+// eta = dt * absolute flow-error bound
+// ------------------------------------------------------------
+
+q2_inflow:
+        init i. i?float
+    |   local f9 c.
+            f9?proxies.reading.
+            c!inflow.
+            branch c {
+                Normal:
+                    select f9 {
+                        Normal: rec
+                    }
+            } or {
+                Error:
+                    select f9 {
+                        Error: end
+                    }
+            }
+
+proc q2_inflow(dt float) f9 c.
+
+    flow9 proxies.reading <- f9
+
+    let bound float as
+        flow9.error.w + flow9.error.c + flow9.error.b
+
+    c <- {
+        timestep:   flow9.timestep,
+        g:          dt * flow9.value,
+        eta:        dt * bound,
+        coupling:   0.0
+    }
+    branch c of
+        Normal:
+            f9 <- Normal
+            rec q2_inflow<dt> f9 c
+        Error:
+            f9 <- Error
