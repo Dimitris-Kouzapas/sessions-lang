@@ -99,4 +99,28 @@ Run the components in this order:
    sessions.exe safeprocess/main.sess
    ```
 
-Keep both terminals running while the digital twin control application is in use.
+Keep both terminals running while the use case scenario is running.
+
+## 6. Results and Visualisation
+
+The results generated during the fault detection deployment scenario are stored in:
+
+```text
+safeprocess/scripts/results
+```
+
+### Optional — Generate Plots
+
+To visualise the results, navigate to the scripts directory from the project root:
+
+```bat
+cd safeprocess/scripts/
+```
+
+Then run the plotting script:
+
+```bat
+python plot.py
+```
+
+This step is optional and can be performed after the simulation has completed.
