@@ -159,23 +159,20 @@ func (b *basicError) Error() string {
 
 type syntaxError struct {
     basicError
-    column int
+    column  int
+    file    string
 }
 
-func NewSyntaxError(err string, line int, column int) *syntaxError {
+func NewSyntaxError(err string, file string, line int, column int) *syntaxError {
     return &syntaxError {
         basicError: basicError{
             err: err,
             errorType: "Syntax",
-            file: "",
+            file: file,
             line: line,
         },
         column: column,
     }
-}
-
-func (s *syntaxError) Error() string {
-    return fmt.Sprintf("%d:%d: Syntax error.\n\t%s", s.line, s.column, s.err)
 }
 
 /*******************************************************************************

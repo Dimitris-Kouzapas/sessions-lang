@@ -1,4 +1,3 @@
-val mqttID 			as "mqttClient"
 val address 		as "127.0.0.1:1883"
 val clientName 		as "go-controller"
 val qos				as 1
@@ -19,7 +18,6 @@ proc demand(demandID string) u.
 	let mqtt as {
 		service:	"io",
 		action: 	"mqtt",
-		id:			mqttID,
 		address:	address,
 		client:		clientName,
 		qos:		qos,
@@ -47,7 +45,6 @@ proc level {i} u.
 	let mqtt as {
 		service:	"io",
 		action: 	"mqtt",
-		id:			mqttID,
 		address:	address,
 		client:		clientName,
 		qos:		qos,
@@ -84,7 +81,6 @@ proc actuate_pump(pumpID string, sched schedule).
 	let mqtt as {
 		service:	"io",
 		action: 	"mqtt",
-		id:			mqttID,
 		address:	address,
 		client:		clientName,
 		qos:		qos,

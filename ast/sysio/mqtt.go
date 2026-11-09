@@ -368,17 +368,17 @@ type MQTTClient struct {
 	config			*mqttConfig
 }
 
-func NewMQTTClient(id string, broker string, clientID, username, password string, policy OverflowPolicy, size int) (*MQTTClient, error) {
+func NewMQTTClient(broker string, clientID, username, password string, policy OverflowPolicy, size int) (*MQTTClient, error) {
 	mu.Lock()
 	defer mu.Unlock()
-	client, ok := mqttClientRegistry[id]
+	client, ok := mqttClientRegistry[clientID]
 	if !ok {
 		var err error
 		client, err = newMQTTClient(broker, clientID, username, password, policy, size)
 		if err != nil {
 			return nil, err
 		}
-		mqttClientRegistry[id] = client
+		mqttClientRegistry[clientID] = client
 	}
 	return client, nil
 }

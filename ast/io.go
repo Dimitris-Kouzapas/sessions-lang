@@ -247,11 +247,6 @@ type mqttSubscriberExecutor struct{}
 
 func (mqttSubscriberExecutor) execute(conf *recordExpr, tdef typedef) (expression, error) {
 
-	id, ok := conf.readString("id")
-	if !ok {
-		return nil, errors.New("mqtt: missing mqtt id")
-	}
-
 	broker, _ := conf.readString("address")
 	client, _ := conf.readString("client")
 	username, _ := conf.readString("username")
@@ -282,7 +277,6 @@ func (mqttSubscriberExecutor) execute(conf *recordExpr, tdef typedef) (expressio
 	}
 
 	mqttClient, err := sysio.NewMQTTClient(
-							id,
 							broker,
 							client,
 							username,
@@ -318,10 +312,6 @@ func (mqttSubscriberExecutor) execute(conf *recordExpr, tdef typedef) (expressio
 type mqttPublisherExecutor struct{}
 
 func (mqttPublisherExecutor) execute(conf *recordExpr) (expression, error) {
-	id, ok := conf.readString("id")
-	if !ok {
-		return nil, errors.New("mqtt: missing mqtt id")
-	}
 
 	broker, _ := conf.readString("address")
 	client, _ := conf.readString("client")
@@ -355,7 +345,6 @@ func (mqttPublisherExecutor) execute(conf *recordExpr) (expression, error) {
 	}
 
 	mqttClient, err := sysio.NewMQTTClient(
-							id,
 							broker,
 							client,
 							username,

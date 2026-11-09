@@ -13,6 +13,7 @@ import (
 type customErrorListener struct {
     *antlr.DefaultErrorListener
     util.BasicErrorLog
+    file    string
 }
 
 func newCustomErrorListener() *customErrorListener {
@@ -23,8 +24,12 @@ func newCustomErrorListener() *customErrorListener {
 }
 
 func (ce *customErrorListener) SyntaxError(_ antlr.Recognizer, _ interface{}, line, column int, msg string, _ antlr.RecognitionException) {
-    customError := util.NewSyntaxError(msg, line, column)
+    customError := util.NewSyntaxError(msg, ce.file, line, column)
     ce.Add(customError)
+}
+
+func (ce *customErrorListener) setFilename(file string) {
+    ce.file = file
 }
 
 /******************************************************************************
@@ -39,6 +44,7 @@ func parseFile(file string, log *customErrorListener) *module {
         return nil
     }
 
+    log.setFilename(file)
     return parse(input, log)
 }
 

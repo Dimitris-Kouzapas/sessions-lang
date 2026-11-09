@@ -71,7 +71,6 @@ proc controller {i} tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump
 	let mqttPub as {
 		service:	"io",
 		action:		"mqtt",
-		id: 		proxies.mqttID,
 		client:		proxies.clientName,
 		address: 	proxies.address,
 		qos:		proxies.qos,
@@ -84,7 +83,6 @@ proc controller {i} tank1_sensor tank2_sensor d_predictor e_predictor pump1 pump
 	let mqttGet as {
 		service:	"io",
 		action:		"mqtt",
-		id: 		proxies.mqttID,
 		client:		proxies.clientName,
 		address: 	proxies.address,
 		qos:		proxies.qos,
